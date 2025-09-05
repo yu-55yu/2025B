@@ -86,7 +86,7 @@ theta0_rad = incident_angle * pi / 180;
 model_func = @(x, k) model_R(x, k, waveLen_fit, theta0_rad);
 
 options = optimoptions('lsqcurvefit', ...
-    'Display', 'off', 'MaxIterations', 1000, 'FunctionTolerance', 1e-9, ...
+    'Display', 'iter', 'MaxIterations', 1000, 'FunctionTolerance', 1e-9, ...
     'StepTolerance', 1e-10, 'Algorithm', 'trust-region-reflective', 'UseParallel', true);
 
 [x_optimal, ~] = lsqcurvefit(model_func, x0, waveNum_fit, R_fit, lb, ub, options);
@@ -137,54 +137,19 @@ n = real(sqrt(n_squared)); n(n < 1) = 1;
 end
 
 function thk = fft_thk_estimate(waveNum, R, n_avg)
-    R_ac = R - mean(R);
-    N = 2^nextpow2(8*length(waveNum));
-    k_uniform = linspace(min(waveNum), max(waveNum), N);
-    r_uniform = interp1(waveNum, R_ac, k_uniform, 'pchip', 'extrap');
-    window = hann(N);
-    r_windowed = r_uniform(:) .* window(:);
-
-
-    fft_result = fft(r_windowed);
-    fft_power = abs(fft_result(1:N/2)).^2; 
-
-
-    dk = mean(diff(k_uniform));
-    thk_axis = (0:N/2-1) * 10000 / (2 * n_avg * N * dk);
-    search_range = find(thk_axis > 5 & thk_axis < 200);
-
-    if isempty(search_range)
-        thk = 20;
-        return;
-    end
-
-
-    [~, max_idx_in_range] = max(fft_power(search_range));
-    max_idx_rough = search_range(max_idx_in_range);
-    
-    correctNum = 3;
-    DatePower1 = 0; 
-    DatePower2 = 0;
-    
-    for i = -correctNum:correctNum
-        idx = max_idx_rough + i;
-        if idx >= 1 && idx <= length(fft_power)
-            power = fft_power(idx);
-            DatePower1 = DatePower1 + idx * power;
-            DatePower2 = DatePower2 + power;
-        end
-    end
-    
-
-    if DatePower2 > 0
-        f_corrected = DatePower1 / DatePower2;
-    else
-        f_corrected = max_idx_rough;
-    end
-
-       thk = (f_corrected - 1) * 10000 / (2 * n_avg * N * dk);
-     disp('fft计算得到的厚度初值：');
-     disp(thk);
+%根据fft结果计算厚度
+R_ac = R - mean(R);
+N = 2^nextpow2(8*length(waveNum));
+k_uniform = linspace(min(waveNum), max(waveNum), N);
+r_uniform = interp1(waveNum, R_ac, k_uniform, 'pchip', 'extrap');
+window = hann(N); r_windowed = r_uniform(:) .* window(:);
+fft_result = fft(r_windowed); fft_power = abs(fft_result(1:N/2)).^2;
+dk = mean(diff(k_uniform));
+thk_axis = (0:N/2-1) * 10000 / (2 * n_avg * N * dk);
+search_range = find(thk_axis > 5 & thk_axis < 200);
+if isempty(search_range), thk = 20; warning('FFT未能找到明显峰值，使用默认厚度初值20um'); return; end
+[~, max_idx] = max(fft_power(search_range));
+thk = thk_axis(search_range(max_idx));
 end
 
 function plot_refractive_index(waveLen, waveNum, n1_all)
