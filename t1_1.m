@@ -1,266 +1,278 @@
-%% 碳化硅外延层厚度测定主程序
-clear; close all; clc;
-
-%% 1. 读取数据
-% 读取附件1和附件2的数据（10度和15度入射角）
-data1 = readmatrix('附件1.xlsx'); % 10度入射角
-data2 = readmatrix('附件2.xlsx'); % 15度入射角
-
-% 提取波数和反射率
-wavenumber1 = data1(:,1); % 波数 (cm^-1)
-reflectance1 = data1(:,2); % 反射率 (%)
-wavenumber2 = data2(:,1);
-reflectance2 = data2(:,2);
-
-%% 2. 数据预处理 - 截取波数大于1000的数据
-idx1 = wavenumber1 >= 1000;
-k1 = wavenumber1(idx1);
-R1 = reflectance1(idx1);
-
-idx2 = wavenumber2 >= 1000;
-k2 = wavenumber2(idx2);
-R2 = reflectance2(idx2);
-
-%% 3. 使用塞尔迈耶尔方程拟合外延层折射率n1
-% 塞尔迈耶尔方程: n^2 = 1 + Σ(Ai*λ^2)/(λ^2 - Bi)
-% 其中 λ = 10000/k (转换为微米)
-
-% 选择波数大于2000的数据进行拟合
-idx_fit = k1 > 2000;
-k_fit = k1(idx_fit);
-lambda_fit = 10000 ./ k_fit; % 转换为波长(微米)
-
-% 碳化硅折射率的初始参考值（根据文献）
-n_ref = 2.65; % SiC典型折射率
-
-% 构建塞尔迈耶尔方程的拟合函数
-sellmeier = @(params, lambda) sqrt(1 + ...
-    params(1)*lambda.^2./(lambda.^2 - params(4)) + ...
-    params(2)*lambda.^2./(lambda.^2 - params(5)) + ...
-    params(3)*lambda.^2./(lambda.^2 - params(6)));
-
-% 初始参数估计 [A1, A2, A3, B1, B2, B3]
-initial_params = [5.0, 0.5, 0.1, 0.1, 0.5, 10];
-
-% 使用最小二乘法拟合
-% 需要从反射率数据中提取折射率信息
-% 对于单层反射，反射率 R = ((n1-n0)/(n1+n0))^2，其中n0=1(空气)
-% 因此 n1 = (1+sqrt(R/100))/(1-sqrt(R/100))
-
-% 估算高频区域的折射率（干涉效应较小）
-R_high = R1(idx_fit);
-n_estimated = (1 + sqrt(R_high/100)) ./ (1 - sqrt(R_high/100));
-
-% 拟合塞尔迈耶尔参数
-options = optimset('Display','iter','TolFun',1e-8,'TolX',1e-8);
-params_fit = lsqcurvefit(sellmeier, initial_params, lambda_fit, n_estimated, ...
-    [0.1, 0.01, 0.001, 0.01, 0.1, 1], ...  % 下界
-    [10, 5, 1, 1, 5, 50], ...               % 上界
-    options);
-
-% 提取拟合参数
-A1 = params_fit(1); A2 = params_fit(2); A3 = params_fit(3);
-B1 = params_fit(4); B2 = params_fit(5); B3 = params_fit(6);
-
-fprintf('塞尔迈耶尔参数拟合结果:\n');
-fprintf('A1 = %.6f, A2 = %.6f, A3 = %.6f\n', A1, A2, A3);
-fprintf('B1 = %.6f, B2 = %.6f, B3 = %.6f\n', B1, B2, B3);
-
-% 计算所有波数对应的折射率n1
-lambda_all = 10000 ./ k1; % 所有波长
-n1_all = sellmeier(params_fit, lambda_all);
-
-%% 4. FFT分析找到主周期
-% 加窗处理
-win = hann(length(R1));
-R1_windowed = R1 .* win;
-
-% 计算采样间隔
-dk = mean(diff(k1)); % 平均波数间隔
-Fs = 1 / dk;         % 采样频率
-
-% FFT分析
-N = length(R1_windowed);
-Y = fft(R1_windowed);
-P2 = abs(Y / N);
-P1 = P2(1:floor(N/2)+1);
-P1(2:end-1) = 2 * P1(2:end-1);
-
-% 频率坐标（单位：cm）
-f = Fs * (0:(N/2)) / N;
-
-% 找到最大峰值
-threshold_f = 0.001; % 频率阈值（cm）
-valid_idx = find(f > threshold_f);
-[maxVal, peakIdx_temp] = max(P1(valid_idx));
-peakIdx = valid_idx(peakIdx_temp);
-f_peak = f(peakIdx);
-
-% 能量重心校正（更精确的峰值位置）
-correctNum = 5; % 校正范围
-[f_corrected, ~] = energy_centroid_correction(peakIdx, f, P1, correctNum);
-
-fprintf('\n原始主频率 = %.4f cm\n', f_peak);
-fprintf('能量重心校正后频率 = %.4f cm\n', f_corrected);
-
-%% 5. 衬底折射率n2的估计
-% 使用中心频率处的折射率作为衬底折射率的初始估计
-k_center = mean(k1);
-lambda_center = 10000 / k_center;
-n2_init = sellmeier(params_fit, lambda_center) * 0.95; % 衬底折射率通常略小
-
-%% 6. 外延层厚度的初始估计
-% 对于垂直入射，光程差 = 2*n1*d
-% 干涉条件：2*n1*d = m*λ，其中m是干涉级次
-% 在波数域：2*n1*d*k = m*10000
-% 周期 Δk = 10000/(2*n1*d)
-% 因此 d = 10000/(2*n1*Δk)
-
-% 使用平均折射率
-n1_avg = mean(n1_all);
-d_init = 1 / (2 * n1_avg * f_corrected); % 初始厚度估计（微米）
-
-fprintf('\n初始厚度估计 d = %.2f μm\n', d_init * 10000);
-
-%% 7. 精确拟合：考虑入射角和完整的干涉模型
-theta1 = 10 * pi/180; % 入射角（弧度）
-theta2 = 15 * pi/180;
-
-% 干涉反射率模型（考虑入射角）
-% R = |r1 + r2*exp(2i*beta)|^2 / |1 + r1*r2*exp(2i*beta)|^2
-% 其中 beta = 2*pi*n1*d*cos(theta_r)*k/10000
-% theta_r是折射角，由Snell定律确定
-
-reflectance_model = @(params, k, theta) calculate_reflectance(params, k, theta, params_fit);
-
-% 参数：[d(微米), n2, Δn(外延层与衬底折射率差的修正)]
-initial_params2 = [d_init*10000, n2_init, 0];
-
-% 同时拟合两个角度的数据
-k_combined = [k1; k2];
-R_combined = [R1; R2];
-theta_combined = [ones(size(k1))*theta1; ones(size(k2))*theta2];
-
-% 非线性最小二乘拟合
-options2 = optimoptions('lsqcurvefit','Display','iter','MaxFunctionEvaluations',5000);
-params_final = lsqcurvefit(@(p,k) reflectance_model(p, k_combined, theta_combined), ...
-    initial_params2, k_combined, R_combined, ...
-    [d_init*10000*0.5, n2_init*0.9, -0.1], ...  % 下界
-    [d_init*10000*1.5, n2_init*1.1, 0.1], ...   % 上界
-    options2);
-
-d_final = params_final(1);      % 厚度（微米）
-n2_final = params_final(2);     % 衬底折射率
-delta_n = params_final(3);      % 折射率修正
-
-fprintf('\n最终拟合结果:\n');
-fprintf('外延层厚度 d = %.3f μm\n', d_final);
-fprintf('衬底折射率 n2 = %.4f\n', n2_final);
-fprintf('折射率修正 Δn = %.4f\n', delta_n);
-
-%% 8. 结果可视化
-figure('Position', [100, 100, 1200, 800]);
-
-% 子图1：实测与拟合对比（10度）
-subplot(2,2,1);
-R_fit1 = reflectance_model(params_final, k1, theta1*ones(size(k1)));
-plot(k1, R1, 'b-', 'LineWidth', 1, 'DisplayName', '实测数据');
-hold on;
-plot(k1, R_fit1, 'r--', 'LineWidth', 1, 'DisplayName', '拟合结果');
-xlabel('波数 (cm^{-1})');
-ylabel('反射率 (%)');
-title('10°入射角');
-legend('Location', 'best');
-grid on;
-
-% 子图2：实测与拟合对比（15度）
-subplot(2,2,2);
-R_fit2 = reflectance_model(params_final, k2, theta2*ones(size(k2)));
-plot(k2, R2, 'b-', 'LineWidth', 1, 'DisplayName', '实测数据');
-hold on;
-plot(k2, R_fit2, 'r--', 'LineWidth', 1, 'DisplayName', '拟合结果');
-xlabel('波数 (cm^{-1})');
-ylabel('反射率 (%)');
-title('15°入射角');
-legend('Location', 'best');
-grid on;
-
-% 子图3：FFT频谱
-subplot(2,2,3);
-plot(f, P1, 'b-', 'LineWidth', 1);
-hold on;
-plot(f_peak, P1(peakIdx), 'ro', 'MarkerSize', 8, 'LineWidth', 2);
-plot(f_corrected, P1(peakIdx), 'g^', 'MarkerSize', 8, 'LineWidth', 2);
-xlabel('空间频率 (cm)');
-ylabel('幅度');
-title('FFT频谱分析');
-legend('FFT频谱', '原始峰值', '校正后峰值', 'Location', 'best');
-xlim([0, 0.01]);
-grid on;
-
-% 子图4：折射率随波长变化
-subplot(2,2,4);
-plot(lambda_all, n1_all, 'b-', 'LineWidth', 2);
-hold on;
-yline(n2_final, 'r--', 'LineWidth', 1.5);
-xlabel('波长 (μm)');
-ylabel('折射率');
-title('折射率分布');
-legend('外延层 n_1', '衬底 n_2', 'Location', 'best');
-grid on;
-
-%% 9. 误差分析
-% 计算拟合残差
-residual1 = R1 - R_fit1;
-residual2 = R2 - R_fit2;
-RMSE1 = sqrt(mean(residual1.^2));
-RMSE2 = sqrt(mean(residual2.^2));
-
-fprintf('\n拟合误差分析:\n');
-fprintf('10°入射角 RMSE = %.4f%%\n', RMSE1);
-fprintf('15°入射角 RMSE = %.4f%%\n', RMSE2);
-
-%% 辅助函数
-function R = calculate_reflectance(params, k, theta, sellmeier_params)
-    % 计算反射率
-    d = params(1);      % 厚度（微米）
-    n2 = params(2);     % 衬底折射率
-    delta_n = params(3); % 折射率修正
+%% 主函数：碳化硅外延层厚度测量
+% 文件名：main_sic_thickness.m
+function main_sic_thickness()
+    clc; clear; close all;
     
-    % 计算外延层折射率
-    lambda = 10000 ./ k;
-    n1 = sqrt(1 + ...
-        sellmeier_params(1)*lambda.^2./(lambda.^2 - sellmeier_params(4)) + ...
-        sellmeier_params(2)*lambda.^2./(lambda.^2 - sellmeier_params(5)) + ...
-        sellmeier_params(3)*lambda.^2./(lambda.^2 - sellmeier_params(6))) + delta_n;
+    %% 处理附件1（10度入射角）
+    fprintf('==================================================\n');
+    fprintf('处理附件1数据（入射角10°）\n');
+    fprintf('==================================================\n');
     
-    % 空气折射率
-    n0 = 1;
+    [thickness1, n2_1, params1, rmse1] = process_data('附件1.xlsx', 10);
     
-    % Snell定律计算折射角
-    sin_theta_r = sin(theta) .* n0 ./ n1;
-    cos_theta_r = sqrt(1 - sin_theta_r.^2);
+    fprintf('\n附件1结果:\n');
+    fprintf('外延层厚度: %.2f μm\n', thickness1);
+    fprintf('衬底折射率: %.3f\n', n2_1);
+    fprintf('塞尔迈耶尔参数:\n');
+    fprintf('  B1=%.3f, B2=%.3f, B3=%.3f\n', params1(1), params1(2), params1(3));
+    fprintf('  C1=%.3f, C2=%.3f, C3=%.3f\n', params1(4), params1(5), params1(6));
+    fprintf('RMSE: %.4f\n', rmse1);
     
-    % 菲涅尔反射系数（s偏振）
-    r01 = (n0*cos(theta) - n1.*cos_theta_r) ./ (n0*cos(theta) + n1.*cos_theta_r);
-    r12 = (n1.*cos_theta_r - n2.*cos_theta_r) ./ (n1.*cos_theta_r + n2.*cos_theta_r);
+    %% 处理附件2（15度入射角）
+    fprintf('\n==================================================\n');
+    fprintf('处理附件2数据（入射角15°）\n');
+    fprintf('==================================================\n');
     
-    % 相位
-    beta = 2*pi*n1.*d.*cos_theta_r.*k/10000;
+    [thickness2, n2_2, params2, rmse2] = process_data('附件2.xlsx', 15);
     
-    % 总反射率
-    numerator = abs(r01 + r12.*exp(2i*beta)).^2;
-    denominator = abs(1 + r01.*r12.*exp(2i*beta)).^2;
-    R = 100 * numerator ./ denominator;
+    fprintf('\n附件2结果:\n');
+    fprintf('外延层厚度: %.2f μm\n', thickness2);
+    fprintf('衬底折射率: %.3f\n', n2_2);
+    fprintf('塞尔迈耶尔参数:\n');
+    fprintf('  B1=%.3f, B2=%.3f, B3=%.3f\n', params2(1), params2(2), params2(3));
+    fprintf('  C1=%.3f, C2=%.3f, C3=%.3f\n', params2(4), params2(5), params2(6));
+    fprintf('RMSE: %.4f\n', rmse2);
+    
+    %% 可靠性分析
+    fprintf('\n==================================================\n');
+    fprintf('可靠性分析:\n');
+    fprintf('==================================================\n');
+    
+    thickness_diff = abs(thickness1 - thickness2);
+    relative_diff = thickness_diff / ((thickness1 + thickness2) / 2) * 100;
+    
+    fprintf('两种角度测得的厚度差: %.2f μm\n', thickness_diff);
+    fprintf('相对偏差: %.1f%%\n', relative_diff);
+    
+    if thickness_diff < 1.0
+        fprintf('结果可靠性: 优秀（厚度差<1μm）\n');
+    elseif thickness_diff < 2.0
+        fprintf('结果可靠性: 良好（厚度差<2μm）\n');
+    else
+        fprintf('结果可靠性: 需要进一步验证\n');
+    end
 end
 
-function [f_corrected, P_corrected] = energy_centroid_correction(peakIdx, f, P, correctNum)
-    % 能量重心校正
-    idx_range = max(1, peakIdx-correctNum):min(length(f), peakIdx+correctNum);
-    f_range = f(idx_range);
-    P_range = P(idx_range);
+%% 处理单个数据文件
+function [thickness, n2, sellmeier_params, rmse] = process_data(filename, incident_angle)
+    % 读取数据
+    data = readmatrix(filename);
+    wavenumber = data(:, 1);  % 波数 cm^-1
+    reflectance = data(:, 2) / 100;  % 反射率转换为小数
     
-    % 计算能量重心
-    f_corrected = sum(f_range .* P_range) / sum(P_range);
-    P_corrected = interp1(f, P, f_corrected);
+    % 波长(μm) = 10000/波数
+    wavelength = 10000 ./ wavenumber;
+    
+    % 入射角转换为弧度
+    theta0 = incident_angle * pi / 180;
+    
+    % 使用FFT估计厚度初值
+    thickness_init = estimate_thickness_fft(wavenumber, reflectance);
+    fprintf('FFT估计厚度初值: %.2f μm\n', thickness_init);
+    
+    % 设置优化参数
+    % 参数顺序: [B1, B2, B3, C1, C2, C3, thickness, n2]
+    x0 = [2.0, 0.5, 0.1, 0.01, 0.1, 10, thickness_init, 2.55];
+    lb = [0.1, 0.01, 0.001, 0.001, 0.01, 1, 1, 2.0];
+    ub = [10, 5, 2, 1, 10, 100, 200, 3.0];
+    
+    % 定义目标函数
+    objective = @(x) sum(calculate_residuals(x, wavelength, wavenumber, reflectance, theta0).^2);
+    
+    % 全局优化选项
+    fprintf('开始全局优化...\n');
+    
+    % 使用遗传算法进行全局优化
+    options_ga = optimoptions('ga', ...
+        'PopulationSize', 100, ...
+        'MaxGenerations', 50, ...
+        'Display', 'iter', ...
+        'UseParallel', true, ...
+        'FunctionTolerance', 1e-8);
+    
+    [x_ga, ~] = ga(objective, 8, [], [], [], [], lb, ub, [], options_ga);
+    
+    % 使用局部优化进一步精细化
+    fprintf('\n开始局部优化...\n');
+    options_local = optimoptions('fmincon', ...
+        'Display', 'iter', ...
+        'Algorithm', 'interior-point', ...
+        'MaxIterations', 500, ...
+        'OptimalityTolerance', 1e-10, ...
+        'StepTolerance', 1e-10);
+    
+    [x_optimal, fval] = fmincon(objective, x_ga, [], [], [], [], lb, ub, [], options_local);
+    
+    % 提取结果
+    sellmeier_params = x_optimal(1:6);
+    thickness = x_optimal(7);
+    n2 = x_optimal(8);
+    
+    % 计算RMSE
+    residuals = calculate_residuals(x_optimal, wavelength, wavenumber, reflectance, theta0);
+    rmse = sqrt(mean(residuals.^2));
+    
+    % 绘制结果
+    plot_results(wavenumber, reflectance, x_optimal, wavelength, theta0, incident_angle);
+end
+
+%% FFT估计厚度
+function thickness_est = estimate_thickness_fft(wavenumber, reflectance)
+    % 中心化数据
+    reflectance_centered = reflectance - mean(reflectance);
+    
+    % FFT分析
+    N = length(wavenumber);
+    fft_result = fft(reflectance_centered);
+    
+    % 计算频率
+    delta_k = mean(diff(wavenumber));
+    freq = (0:N-1) / (N * delta_k);
+    
+    % 找到主频率（排除DC分量）
+    fft_power = abs(fft_result).^2;
+    [~, max_idx] = max(fft_power(2:floor(N/2)));
+    main_freq = freq(max_idx + 1);
+    
+    % 估计厚度 d ≈ 10000/(2n*主频率)
+    n_avg = 2.6;  % 碳化硅典型折射率
+    thickness_est = 10000 / (2 * n_avg * main_freq);
+    
+    % 限制在合理范围内
+    thickness_est = max(10, min(150, thickness_est));
+end
+
+%% 计算塞尔迈耶尔折射率
+function n = sellmeier(wavelength, params)
+    B1 = params(1); B2 = params(2); B3 = params(3);
+    C1 = params(4); C2 = params(5); C3 = params(6);
+    
+    lambda_sq = wavelength.^2;
+    
+    % 避免除零
+    term1 = B1 * lambda_sq ./ (lambda_sq - C1 + 1e-10);
+    term2 = B2 * lambda_sq ./ (lambda_sq - C2 + 1e-10);
+    term3 = B3 * lambda_sq ./ (lambda_sq - C3 + 1e-10);
+    
+    n_squared = 1 + term1 + term2 + term3;
+    n = sqrt(abs(n_squared));
+end
+
+%% 计算反射率模型
+function R = reflectance_model(params, wavelength, wavenumber, theta0)
+    % 提取参数
+    sellmeier_params = params(1:6);
+    thickness = params(7);
+    n2 = params(8);
+    
+    % 计算外延层折射率
+    n1 = sellmeier(wavelength, sellmeier_params);
+    n0 = 1.0;  % 空气折射率
+    
+    % 计算折射角（斯涅尔定律）
+    sin_theta1 = n0 * sin(theta0) ./ n1;
+    sin_theta2 = n0 * sin(theta0) / n2;
+    
+    % 确保值在有效范围内
+    sin_theta1 = max(-1, min(1, sin_theta1));
+    sin_theta2 = max(-1, min(1, sin_theta2));
+    
+    cos_theta0 = cos(theta0);
+    cos_theta1 = sqrt(1 - sin_theta1.^2);
+    cos_theta2 = sqrt(1 - sin_theta2^2);
+    
+    % 计算菲涅尔系数（s偏振）
+    r01 = (n0*cos_theta0 - n1.*cos_theta1) ./ (n0*cos_theta0 + n1.*cos_theta1);
+    t01 = 2*n0*cos_theta0 ./ (n0*cos_theta0 + n1.*cos_theta1);
+    t10 = 2*n1.*cos_theta1 ./ (n0*cos_theta0 + n1.*cos_theta1);
+    r12 = (n1.*cos_theta1 - n2*cos_theta2) ./ (n1.*cos_theta1 + n2*cos_theta2);
+    
+    % 相位差 δ = 4πn₁d·cos(θ₁)·ν/10000
+    delta = 4 * pi * n1 .* thickness .* cos_theta1 .* wavenumber / 10000;
+    
+    % 计算反射率
+    numerator = r01.^2 + r12^2 * t01.^2 .* t10.^2 + 2*r01.*r12.*t01.*t10.*cos(delta);
+    denominator = 1 + r01.^2 * r12^2 + 2*r01.*r12.*cos(delta);
+    
+    R = numerator ./ denominator;
+end
+
+%% 计算残差
+function residuals = calculate_residuals(params, wavelength, wavenumber, reflectance, theta0)
+    R_model = reflectance_model(params, wavelength, wavenumber, theta0);
+    % 加权残差
+    weights = sqrt(reflectance + 0.01);
+    residuals = (R_model - reflectance) .* weights;
+end
+
+%% 绘制结果
+function plot_results(wavenumber, reflectance, params, wavelength, theta0, incident_angle)
+    % 计算拟合的反射率
+    R_fitted = reflectance_model(params, wavelength, wavenumber, theta0);
+    
+    % 提取参数
+    thickness = params(7);
+    n2 = params(8);
+    
+    % 创建图形
+    figure('Position', [100, 100, 1000, 600]);
+    
+    % 子图1：反射率对比
+    subplot(2, 1, 1);
+    plot(wavenumber, reflectance, 'b.', 'MarkerSize', 2);
+    hold on;
+    plot(wavenumber, R_fitted, 'r-', 'LineWidth', 1.5);
+    xlabel('波数 (cm^{-1})');
+    ylabel('反射率');
+    title(sprintf('反射率拟合结果 (入射角=%d°, 厚度=%.2f μm, n_2=%.3f)', ...
+        incident_angle, thickness, n2));
+    legend('实测数据', '拟合结果', 'Location', 'best');
+    grid on;
+    grid minor;
+    
+    % 子图2：残差分布
+    subplot(2, 1, 2);
+    residuals = reflectance - R_fitted;
+    plot(wavenumber, residuals, 'g.', 'MarkerSize', 2);
+    hold on;
+    yline(0, 'k--', 'LineWidth', 1);
+    xlabel('波数 (cm^{-1})');
+    ylabel('残差');
+    title(sprintf('残差分布 (RMSE = %.4f)', sqrt(mean(residuals.^2))));
+    grid on;
+    grid minor;
+    
+    % 调整布局
+    sgtitle(sprintf('碳化硅外延层厚度测量结果 (入射角 %d°)', incident_angle));
+end
+
+%% 获取所有波长对应的折射率
+function n1_all = get_n1_all(wavelength, sellmeier_params)
+    n1_all = sellmeier(wavelength, sellmeier_params);
+end
+
+%% 额外的辅助函数：批量处理和分析
+function batch_analysis()
+    % 此函数用于批量处理多个文件或进行参数敏感性分析
+    
+    % 角度扫描分析
+    angles = 5:5:30;
+    thicknesses = zeros(length(angles), 1);
+    
+    for i = 1:length(angles)
+        % 这里假设有对应角度的数据文件
+        filename = sprintf('data_angle_%d.xlsx', angles(i));
+        if exist(filename, 'file')
+            [thickness, ~, ~, ~] = process_data(filename, angles(i));
+            thicknesses(i) = thickness;
+        end
+    end
+    
+    % 绘制角度依赖性
+    figure;
+    plot(angles, thicknesses, 'bo-', 'LineWidth', 2);
+    xlabel('入射角 (度)');
+    ylabel('测量厚度 (μm)');
+    title('厚度测量的角度依赖性');
+    grid on;
 end
