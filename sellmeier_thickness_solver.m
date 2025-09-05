@@ -1,494 +1,196 @@
-%% Ö÷³ÌĞò£ºÈû¶ûÂõÒ®¶û·½³ÌÄâºÏºÍÍâÑÓ²ãºñ¶È¼ÆËã
-% ÎÄ¼şÃû£ºsellmeier_thickness_solver_improved.m
 
-function sellmeier_thickness_solver_improved()
-    clc; clear; close all;
+function sellmeier_thickness_solver()
+    clc;
+    clear;
+    close all;
     
-    %% ´¦Àí¸½¼ş1£¨10¶ÈÈëÉä½Ç£©
-    fprintf('==================================================\n');
-    fprintf('´¦Àí¸½¼ş1Êı¾İ£¨ÈëÉä½Ç10¡ã£©\n');
-    fprintf('==================================================\n');
+    % å¤„ç†é™„ä»¶    
+    [thickness1, n2_1, params1, ~] = process_file('é™„ä»¶1.xlsx', 10);    
+    [thickness2, n2_2, params2, ~] = process_file('é™„ä»¶2.xlsx', 15);
     
-    [thickness1, n1_all_1, params1] = process_file('¸½¼ş1.xlsx', 10);
-    
-    %% ´¦Àí¸½¼ş2£¨15¶ÈÈëÉä½Ç£©  
+    % ç»“æœ
     fprintf('\n==================================================\n');
-    fprintf('´¦Àí¸½¼ş2Êı¾İ£¨ÈëÉä½Ç15¡ã£©\n');
+    fprintf('æœ€ç»ˆç»“æœå¯¹æ¯”åˆ†æ\n');
     fprintf('==================================================\n');
-    
-    [thickness2, n1_all_2, params2] = process_file('¸½¼ş2.xlsx', 15);
-    
-    %% ½á¹û¶Ô±ÈÓëÑéÖ¤
-    fprintf('\n==================================================\n');
-    fprintf('½á¹û¶Ô±È·ÖÎö\n');
-    fprintf('==================================================\n');
-    fprintf('¸½¼ş1ºñ¶È: %.2f ¦Ìm\n', thickness1);
-    fprintf('¸½¼ş2ºñ¶È: %.2f ¦Ìm\n', thickness2);
-    fprintf('ºñ¶È²îÒì: %.2f ¦Ìm (%.1f%%)\n', ...
+    fprintf('é™„ä»¶1 -> åšåº¦: %.2f Î¼m, è¡¬åº•æŠ˜å°„ç‡ n2: %.3f\n', thickness1, n2_1);
+    fprintf('é™„ä»¶2 -> åšåº¦: %.2f Î¼m, è¡¬åº•æŠ˜å°„ç‡ n2: %.3f\n', thickness2, n2_2);
+    fprintf('åšåº¦å·®å¼‚: %.2f Î¼m (%.2f%%)\n', ...
         abs(thickness1-thickness2), ...
         abs(thickness1-thickness2)/mean([thickness1,thickness2])*100);
     
-    % ½á¹û¿É¿¿ĞÔ·ÖÎö
+    % ç»“æœå¯é æ€§åˆ†æ
     analyze_reliability(thickness1, thickness2, params1, params2);
 end
 
-%% ´¦Àíµ¥¸öÎÄ¼ş
-function [thickness, n1_all, sellmeier_params] = process_file(filename, incident_angle)
-    
-    %% 1. ¶ÁÈ¡Êı¾İ
+
+function [thickness, n2, sellmeier_params, n1_all] = process_file(filename, incident_angle)
     data = readmatrix(filename);
-    wavenumber = data(:, 1);  % ²¨Êı cm^-1
-    reflectance = data(:, 2) / 100;  % ·´ÉäÂÊ×ª»»ÎªĞ¡Êı
-    wavelength = 10000 ./ wavenumber;  % ²¨³¤ ¦Ìm
+    wavenumber_full = data(:, 1);  % å…¨æ³¢æ®µæ³¢æ•°
+    reflectance_full = data(:, 2) / 100;  % å…¨æ³¢æ®µåå°„ç‡
+    wavelength_full = 10000 ./ wavenumber_full;  % å…¨æ³¢æ®µæ³¢é•¿
     
-    %% 2. µÚÒ»²½£ºÓÃ¸ß²¨ÊıÊı¾İÄâºÏÈû¶ûÂõÒ®¶û²ÎÊı
-    fprintf('\n²½Öè1: Ê¹ÓÃ¸ß²¨ÊıÇøÓò(>2000 cm^-1)ÄâºÏÈû¶ûÂõÒ®¶û²ÎÊı...\n');
+
+    %ç­›é€‰
+    fit_mask = wavenumber_full > 1500;
+    wavenumber_fit = wavenumber_full(fit_mask);
+    reflectance_fit = reflectance_full(fit_mask);
+    wavelength_fit = wavelength_full(fit_mask);
+    fprintf('  å·²ç­›é€‰æ³¢æ•° > 1500 cm^-1 çš„æ•°æ®, å…± %d ç‚¹ç”¨äºå¤„ç†ã€‚\n', length(wavenumber_fit));
+
+    fprintf('\næ­¥éª¤3: ä¼°ç®—å‚æ•°åˆå§‹å€¼...\n');
+    n_avg_sic = 2.5835; 
+
+    thickness_init = fft_thickness_estimate_improved(wavenumber_fit, reflectance_fit, n_avg_sic);
+    fprintf('  FFT ä¼°è®¡åšåº¦åˆå€¼ (åŸºäºé«˜æ³¢æ•°æ•°æ®): d_init = %.2f Î¼m\n', thickness_init);
     
-    % Ñ¡Ôñ¸ß²¨ÊıÊı¾İ£¨Ö»ÓÃÓÚÄâºÏ²ÎÊı£©
-    high_k_mask = wavenumber > 2000;
-    high_k_wavelength = wavelength(high_k_mask);
-    high_k_reflectance = reflectance(high_k_mask);
+    n2_init = 2.55;
+    fprintf('  è¡¬åº•æŠ˜å°„ç‡åˆå€¼: n2_init = %.2f\n', n2_init);
     
-    % ÄâºÏÈû¶ûÂõÒ®¶û²ÎÊı£¨¸Ä½ø°æ£©
-    sellmeier_params = fit_sellmeier_params_improved(high_k_wavelength, high_k_reflectance, incident_angle);
+    B1_init = 5.5394;  C1_init = 0.026945;
+    B2_init = 0.20;  C2_init = 100;
+    B3_init = 0.05;  C3_init = 0.01;
+    sellmeier_params_init = [B1_init, B2_init, B3_init, C1_init, C2_init, C3_init];
+    fprintf('  å¡å°”è¿ˆè€¶å°”å‚æ•°åˆå€¼å·²è®¾ç½® (åŸºäºæ–‡çŒ®)\n');
+
+    fprintf('\næ­¥éª¤4: æ‰§è¡Œä¸€ä½“åŒ–å…¨å±€æ‹Ÿåˆ...\n');
     
-    fprintf('Èû¶ûÂõÒ®¶û²ÎÊı:\n');
+    x0 = [thickness_init, n2_init, sellmeier_params_init];
+    lb = [thickness_init*0.8, 2.0,  0.1, 0.001, 0.0001, 0.0001, 0.1,  0.001];
+    ub = [thickness_init*1.2, 3.5,  20,  10,    5,      2,      150,  20];
+    
+
+    [x_optimal, R_squared_fit] = global_fit_all_parameters(x0, lb, ub, wavenumber_fit, reflectance_fit, wavelength_fit, incident_angle);
+    
+
+    thickness = x_optimal(1);
+    n2 = x_optimal(2);
+    sellmeier_params = x_optimal(3:8);
+    
+    fprintf('\n--- æ‹Ÿåˆå®Œæˆ ---\n');
+    fprintf('æœ€ç»ˆåšåº¦: %.2f Î¼m\n', thickness);
+    fprintf('æœ€ç»ˆè¡¬åº•æŠ˜å°„ç‡ n2: %.3f\n', n2);
+    fprintf('æœ€ç»ˆå¡å°”è¿ˆè€¶å°”å‚æ•°:\n');
     fprintf('  B1=%.4f, B2=%.4f, B3=%.4f\n', sellmeier_params(1), sellmeier_params(2), sellmeier_params(3));
     fprintf('  C1=%.4f, C2=%.4f, C3=%.4f\n', sellmeier_params(4), sellmeier_params(5), sellmeier_params(6));
+    fprintf('åœ¨æ‹ŸåˆåŒºåŸŸ(>1500 cm^-1)çš„æ‹Ÿåˆä¼˜åº¦ RÂ²: %.4f\n', R_squared_fit);
+
+    fprintf('\næ­¥éª¤5: è®¡ç®—æœ€ç»ˆæŠ˜å°„ç‡å¹¶ç»˜åˆ¶å…¨æ³¢æ®µå¯¹æ¯”å›¾...\n');
     
-    %% 3. ¼ÆËãËùÓĞ²¨³¤µÄÕÛÉäÂÊ
-    n1_all = calculate_sellmeier_n(wavelength, sellmeier_params);
+
+    n1_all = calculate_sellmeier_n(wavelength_full, sellmeier_params);
     
-    % ÏÔÊ¾ÕÛÉäÂÊÍ³¼Æ
-    display_n_statistics(n1_all, wavenumber);
-    
-    % »æÖÆÕÛÉäÂÊÇúÏß£¨È«²¨¶Î£©
-    plot_refractive_index(wavelength, wavenumber, n1_all, high_k_mask);
-    
-    %% 4. µÚ¶ş²½£ºÊ¹ÓÃFFT¹À¼Æºñ¶È³õÖµ
-    fprintf('\n²½Öè2: FFT¹À¼Æºñ¶È³õÖµ...\n');
-    
-    % Ê¹ÓÃÆ½¾ùÕÛÉäÂÊ
-    n_avg = mean(n1_all);
-    
-    % FFT·ÖÎö£¨¸Ä½ø°æ£©
-    thickness_init = fft_thickness_estimate_improved(wavenumber, reflectance, n_avg);
-    fprintf('FFT¹À¼Æºñ¶È: %.2f ¦Ìm\n', thickness_init);
-    
-    %% 5. µÚÈı²½£º¾«È·ÄâºÏºñ¶È
-    fprintf('\n²½Öè3: ¾«È·ÄâºÏºñ¶È...\n');
-    
-    % ³Äµ×ÕÛÉäÂÊ³õÖµ£¨Ì¼»¯¹èµäĞÍÖµ£©
-    n2_init = 2.55;
-    
-    % ÓÅ»¯ºñ¶ÈºÍ³Äµ×ÕÛÉäÂÊ£¨¸Ä½ø°æ£©
-    [thickness, n2, fit_quality] = fit_thickness_improved(wavenumber, reflectance, n1_all, incident_angle, thickness_init, n2_init);
-    
-    fprintf('×îÖÕºñ¶È: %.2f ¦Ìm\n', thickness);
-    fprintf('³Äµ×ÕÛÉäÂÊ: %.3f\n', n2);
-    fprintf('ÄâºÏÓÅ¶È R?: %.4f\n', fit_quality);
-    
-    %% 6. »æÖÆÄâºÏ½á¹û
-    plot_fitting_results_improved(wavenumber, reflectance, n1_all, thickness, n2, incident_angle);
+    plot_refractive_index(wavelength_full, wavenumber_full, n1_all);
+    plot_fitting_results_improved(wavenumber_full, reflectance_full, n1_all, thickness, n2, incident_angle);
 end
 
-%% ¸Ä½øµÄÈû¶ûÂõÒ®¶û²ÎÊıÄâºÏ
-function params = fit_sellmeier_params_improved(wavelength, reflectance, incident_angle)
+%  å…¨å±€ä¼˜åŒ–å‡½æ•°
+function [x_optimal, R_squared] = global_fit_all_parameters(x0, lb, ub, wavenumber_fit, reflectance_fit, wavelength_fit, incident_angle)
     
-    % ¶à×é³õÊ¼Öµ³¢ÊÔ£¬Ñ¡Ôñ×îÓÅ½á¹û
-    initial_guesses = [
-        [5.0, 0.5, 0.1, 0.01, 0.5, 20];    % »ù´¡²Â²â
-        [6.5, 0.3, 0.05, 0.02, 0.3, 15];   % Ì¼»¯¹èµäĞÍÖµ
-        [4.0, 0.8, 0.2, 0.005, 0.8, 25];   % Ìæ´ú²Â²â
-    ];
+    theta0_rad = incident_angle * pi / 180;
+    model_func = @(x, k) model_reflectance_full(x, k, wavelength_fit, theta0_rad);
     
-    % ²ÎÊı±ß½ç£¨¸ü¿íËÉ£©
-    lb = [0.1, 0.001, 0.0001, 0.0001, 0.001, 0.1];
-    ub = [20, 10, 5, 2, 20, 200];
-    
-    theta0 = incident_angle * pi / 180;
-    
-    best_params = [];
-    best_resnorm = inf;
-    
-    % ³¢ÊÔ²»Í¬³õÊ¼Öµ
-    for i = 1:size(initial_guesses, 1)
-        x0 = initial_guesses(i, :);
+    options = optimoptions('lsqcurvefit', ...
+        'Display', 'iter', 'MaxIterations', 1000, 'FunctionTolerance', 1e-9, ...
+        'StepTolerance', 1e-10, 'Algorithm', 'trust-region-reflective', 'UseParallel', true);
         
-        objective = @(x) sellmeier_objective_improved(x, wavelength, reflectance, theta0);
-        
-        options = optimoptions('lsqnonlin', ...
-            'Display', 'off', ...
-            'MaxIterations', 2000, ...
-            'FunctionTolerance', 1e-12, ...
-            'StepTolerance', 1e-12, ...
-            'Algorithm', 'trust-region-reflective');
-        
-        try
-            [params_temp, resnorm_temp] = lsqnonlin(objective, x0, lb, ub, options);
-            
-            if resnorm_temp < best_resnorm
-                best_params = params_temp;
-                best_resnorm = resnorm_temp;
-            end
-        catch
-            continue;
-        end
-    end
+    [x_optimal, ~] = lsqcurvefit(model_func, x0, wavenumber_fit, reflectance_fit, lb, ub, options);
     
-    params = best_params;
-    fprintf('×îÓÅÄâºÏ²Ğ²î: %.6f\n', best_resnorm);
+    R_fitted = model_func(x_optimal, wavenumber_fit);
+    SS_tot = sum((reflectance_fit - mean(reflectance_fit)).^2);
+    SS_res = sum((reflectance_fit - R_fitted).^2);
+    R_squared = 1 - SS_res / SS_tot;
 end
 
-%% ¸Ä½øµÄÈû¶ûÂõÒ®¶ûÄ¿±êº¯Êı
-function residuals = sellmeier_objective_improved(params, wavelength, reflectance, theta0)
-    
-    % ¼ÆËãÕÛÉäÂÊ
-    n1 = calculate_sellmeier_n(wavelength, params);
-    
-    % È·±£ÕÛÉäÂÊÔÚºÏÀí·¶Î§
-    if any(n1 < 1.5) || any(n1 > 4.0) || any(imag(n1) ~= 0)
-        residuals = ones(size(reflectance)) * 1e6;  % ³Í·£Ïî
-        return;
-    end
-    
-    % ¿ÕÆøºÍ³Äµ×µÄÕÛÉäÂÊ
-    n0 = 1.0;
-    
-    % ¼ÆËãÕÛÉä½Ç£¨Ë¹Äù¶û¶¨ÂÉ£©
-    sin_theta1 = n0 * sin(theta0) ./ n1;
-    cos_theta1 = real(sqrt(1 - sin_theta1.^2));
-    
-    % ·ÇÆ«Õñ¹âµÄ·ÆÄù¶û·´ÉäÏµÊı
-    % sÆ«Õñ
+
+%  ç‰©ç†æ¨¡å‹ä¸è¾…åŠ©å‡½æ•°
+function R = model_reflectance_full(params, wavenumber, wavelength, theta0)
+    thickness = params(1);
+    n2 = params(2);
+    sellmeier_params = params(3:8);
+    n1 = calculate_sellmeier_n(wavelength, sellmeier_params);
+    R = model_reflectance_vectorized([thickness, n2], wavenumber, n1, theta0);
+end
+
+function R = model_reflectance_vectorized(params, wavenumber, n1, theta0)
+    thickness = params(1); n2 = params(2); n0 = 1.0;
+    n1 = n1(:); wavenumber = wavenumber(:);
+    sin_theta1 = n0 * sin(theta0) ./ n1; cos_theta1 = real(sqrt(1 - sin_theta1.^2));
+    sin_theta2 = n0 * sin(theta0) / n2; cos_theta2 = real(sqrt(1 - sin_theta2^2));
     r01_s = (n0*cos(theta0) - n1.*cos_theta1) ./ (n0*cos(theta0) + n1.*cos_theta1);
-    
-    % pÆ«Õñ
+    r12_s = (n1.*cos_theta1 - n2*cos_theta2) ./ (n1.*cos_theta1 + n2*cos_theta2);
     r01_p = (n1*cos(theta0) - n0.*cos_theta1) ./ (n1*cos(theta0) + n0.*cos_theta1);
-    
-    % ·ÇÆ«Õñ¹â·´ÉäÂÊ
-    R_surface = (abs(r01_s).^2 + abs(r01_p).^2) / 2;
-    
-    % ²Ğ²î£¨Ê¹ÓÃÏà¶ÔÎó²î¼ÓÈ¨£©
-    weight = 1 ./ (reflectance + 0.01);  % ±ÜÃâ³ıÁã
-    residuals = (R_surface - reflectance) .* sqrt(weight);
+    r12_p = (n2*cos_theta1 - n1.*cos_theta2) ./ (n2*cos_theta1 + n1.*cos_theta2);
+    delta = 4 * pi * n1 .* thickness .* cos_theta1 .* wavenumber / 10000;
+    R_s = abs((r01_s + r12_s .* exp(1i*delta)) ./ (1 + r01_s .* r12_s .* exp(1i*delta))).^2;
+    R_p = abs((r01_p + r12_p .* exp(1i*delta)) ./ (1 + r01_p .* r12_p .* exp(1i*delta))).^2;
+    R = (R_s + R_p) / 2; R = real(R(:));
 end
 
-%% ¸Ä½øµÄFFTºñ¶È¹À¼Æ
+function n = calculate_sellmeier_n(wavelength, params)
+    B1 = params(1); B2 = params(2); B3 = params(3);
+    C1 = params(4); C2 = params(5); C3 = params(6);
+    lambda_sq = wavelength.^2; eps = 1e-10;
+    term1 = B1 * lambda_sq ./ (lambda_sq - C1 + eps);
+    term2 = B2 * lambda_sq ./ (lambda_sq - C2 + eps);  
+    term3 = B3 * lambda_sq ./ (lambda_sq - C3 + eps);
+    n_squared = 1 + term1 + term2 + term3;
+    n_squared(n_squared < 1) = 1; 
+    n = real(sqrt(n_squared)); n(n < 1) = 1;
+end
+
 function thickness = fft_thickness_estimate_improved(wavenumber, reflectance, n_avg)
-    
-    % Êı¾İÔ¤´¦Àí
-    reflectance_smooth = smooth(reflectance, 5);  % Æ½»¬´¦Àí
-    reflectance_ac = reflectance_smooth - mean(reflectance_smooth);
-    
-    % ²åÖµµ½¸üÃÜµÄ¾ùÔÈÍø¸ñ
-    N = 2^nextpow2(4*length(wavenumber));  % Ê¹ÓÃ2µÄÃİ´ÎÒÔÌá¸ßFFTĞ§ÂÊ
+    reflectance_ac = reflectance - mean(reflectance);
+    N = 2^nextpow2(8*length(wavenumber));
     k_uniform = linspace(min(wavenumber), max(wavenumber), N);
-    r_uniform = interp1(wavenumber, reflectance_ac, k_uniform, 'pchip');
-    
-    % ¼Ó´°¼õÉÙÆµÆ×Ğ¹Â¶
-    window = hann(N);
-    r_windowed = r_uniform(:) .* window(:);
-    
-    % FFT·ÖÎö
-    fft_result = fft(r_windowed);
-    fft_power = abs(fft_result).^2;
-    
-    % ÆµÂÊÖá£¨ºñ¶ÈÓò£©
+    r_uniform = interp1(wavenumber, reflectance_ac, k_uniform, 'pchip', 'extrap');
+    window = hann(N); r_windowed = r_uniform(:) .* window(:);
+    fft_result = fft(r_windowed); fft_power = abs(fft_result(1:N/2)).^2;
     dk = mean(diff(k_uniform));
-    thickness_axis = (0:N-1) * 10000 / (2 * n_avg * N * dk);
-    
-    % ÕÒµ½Ö÷·å£¨ÅÅ³ıÁãÆµºÍÔëÉù£©
+    thickness_axis = (0:N/2-1) * 10000 / (2 * n_avg * N * dk);
     search_range = find(thickness_axis > 5 & thickness_axis < 200);
+    if isempty(search_range), thickness = 20; warning('FFTæœªèƒ½æ‰¾åˆ°æ˜æ˜¾å³°å€¼ï¼Œä½¿ç”¨é»˜è®¤åšåº¦åˆå€¼20um'); return; end
     [~, max_idx] = max(fft_power(search_range));
     thickness = thickness_axis(search_range(max_idx));
 end
 
-%% ¸Ä½øµÄºñ¶ÈÄâºÏ
-function [thickness, n2, R_squared] = fit_thickness_improved(wavenumber, reflectance, n1, incident_angle, d_init, n2_init)
-    
-    theta0 = incident_angle * pi / 180;
-    
-    % ¶¨ÒåÄ¿±êº¯Êı
-    model_func = @(x, xdata) model_reflectance_vectorized(x, xdata, n1, theta0);
-    
-    % ³õÊ¼ÖµºÍ±ß½ç
-    x0 = [d_init, n2_init];
-    lb = [0.5, 2.0];   % ¸ü¿íµÄ·¶Î§
-    ub = [300, 3.5];
-    
-    % ÓÅ»¯Ñ¡Ïî
-    options = optimoptions('lsqcurvefit', ...
-        'Display', 'iter', ...
-        'MaxIterations', 1000, ...
-        'FunctionTolerance', 1e-12, ...
-        'StepTolerance', 1e-12, ...
-        'Algorithm', 'trust-region-reflective', ...
-        'UseParallel', true);  % ²¢ĞĞ¼ÆËã
-    
-    % ÄâºÏ
-    [x_optimal, resnorm] = lsqcurvefit(model_func, x0, wavenumber, reflectance, lb, ub, options);
-    
-    thickness = x_optimal(1);
-    n2 = x_optimal(2);
-    
-    % ¼ÆËãÄâºÏÓÅ¶È
-    R_fitted = model_func(x_optimal, wavenumber);
-    SS_tot = sum((reflectance - mean(reflectance)).^2);
-    SS_res = sum((reflectance - R_fitted).^2);
-    R_squared = 1 - SS_res/SS_tot;
-    
-    fprintf('×îÖÕÄâºÏ²Ğ²î: %.6f\n', resnorm);
+function plot_refractive_index(wavelength, wavenumber, n1_all)
+    figure('Name', 'æ‹Ÿåˆå¾—åˆ°çš„æŠ˜å°„ç‡è‰²æ•£æ›²çº¿', 'Position', [100, 100, 1200, 500]);
+    subplot(1,2,1); plot(wavelength, n1_all, 'b-', 'LineWidth', 2); xlabel('æ³¢é•¿ (Î¼m)'); ylabel('å¤–å»¶å±‚æŠ˜å°„ç‡ n_1'); title('æŠ˜å°„ç‡ vs æ³¢é•¿'); grid on;
+    subplot(1,2,2); plot(wavenumber, n1_all, 'r-', 'LineWidth', 2); xlabel('æ³¢æ•° (cm^{-1})'); ylabel('å¤–å»¶å±‚æŠ˜å°„ç‡ n_1'); title('æŠ˜å°„ç‡ vs æ³¢æ•°'); grid on; xlim([min(wavenumber), max(wavenumber)]);
 end
 
-%% ÏòÁ¿»¯µÄ·´ÉäÂÊÄ£ĞÍ
-function R = model_reflectance_vectorized(params, wavenumber, n1, theta0)
-    
-    thickness = params(1);
-    n2 = params(2);
-    n0 = 1.0;
-    
-    % È·±£ÊäÈëÊÇÁĞÏòÁ¿
-    n1 = n1(:);
-    wavenumber = wavenumber(:);
-    
-    % ¼ÆËã¸÷²ãÕÛÉä½Ç
-    sin_theta1 = n0 * sin(theta0) ./ n1;
-    cos_theta1 = real(sqrt(1 - sin_theta1.^2));
-    
-    sin_theta2 = n0 * sin(theta0) / n2;
-    cos_theta2 = real(sqrt(1 - sin_theta2^2));
-    
-    % ·ÇÆ«Õñ¹âµÄ×ÛºÏ·´ÉäÏµÊı
-    % sÆ«Õñ
-    r01_s = (n0*cos(theta0) - n1.*cos_theta1) ./ (n0*cos(theta0) + n1.*cos_theta1);
-    r12_s = (n1.*cos_theta1 - n2*cos_theta2) ./ (n1.*cos_theta1 + n2*cos_theta2);
-    
-    % pÆ«Õñ
-    r01_p = (n1*cos(theta0) - n0.*cos_theta1) ./ (n1*cos(theta0) + n0.*cos_theta1);
-    r12_p = (n2*cos_theta1 - n1.*cos_theta2) ./ (n2*cos_theta1 + n1.*cos_theta2);
-    
-    % ÏàÎ»²î
-    delta = 4 * pi * n1 .* thickness .* cos_theta1 .* wavenumber / 10000;
-    
-    % Ë«¹âÊø¸ÉÉæ¹«Ê½£¨sºÍpµÄÆ½¾ù£©
-    R_s = abs((r01_s + r12_s .* exp(1i*delta)) ./ (1 + r01_s .* r12_s .* exp(1i*delta))).^2;
-    R_p = abs((r01_p + r12_p .* exp(1i*delta)) ./ (1 + r01_p .* r12_p .* exp(1i*delta))).^2;
-    
-    R = (R_s + R_p) / 2;
-    R = real(R(:));  % È·±£Êä³öÊÇÊµÊıÁĞÏòÁ¿
-end
-
-%% Èû¶ûÂõÒ®¶û·½³Ì¼ÆËãÕÛÉäÂÊ
-function n = calculate_sellmeier_n(wavelength, params)
-    % Sellmeier·½³Ì: n^2 = 1 + ¦²[Bi*¦Ë^2/(¦Ë^2-Ci)]
-    B1 = params(1); B2 = params(2); B3 = params(3);
-    C1 = params(4); C2 = params(5); C3 = params(6);
-    
-    lambda_sq = wavelength.^2;
-    
-    % ¼ÆËã¸÷Ïî£¨¸Ä½øÊıÖµÎÈ¶¨ĞÔ£©
-    eps = 1e-10;  % ±ÜÃâ³ıÁã
-    term1 = B1 * lambda_sq ./ (lambda_sq - C1 + eps);
-    term2 = B2 * lambda_sq ./ (lambda_sq - C2 + eps);  
-    term3 = B3 * lambda_sq ./ (lambda_sq - C3 + eps);
-    
-    % È·±£Ã¿Ïî¶¼ÊÇÕıÖµ¹±Ï×
-    term1 = max(0, real(term1));
-    term2 = max(0, real(term2));
-    term3 = max(0, real(term3));
-    
-    n_squared = 1 + term1 + term2 + term3;
-    
-    % È·±£nÎªÊµÊıÇÒºÏÀí
-    n = real(sqrt(n_squared));
-    n = max(1.0, min(4.0, n));  % ÏŞÖÆÔÚºÏÀí·¶Î§
-end
-
-%% »æÖÆÕÛÉäÂÊÇúÏß
-function plot_refractive_index(wavelength, wavenumber, n1_all, high_k_mask)
-    
-    figure('Position', [100, 100, 1200, 600]);
-    
-    % ×ÓÍ¼1£ºÕÛÉäÂÊvs²¨³¤£¨È«²¨¶Î£©
-    subplot(1,2,1);
-    plot(wavelength, n1_all, 'b-', 'LineWidth', 2);
-    hold on;
-    plot(wavelength(high_k_mask), n1_all(high_k_mask), 'r.', 'MarkerSize', 8);
-    xlabel('²¨³¤ (¦Ìm)');
-    ylabel('ÕÛÉäÂÊ n');
-    title('ÍâÑÓ²ãÕÛÉäÂÊÉ«É¢ÇúÏß');
-    legend('È«²¨¶ÎÕÛÉäÂÊ', '¸ß²¨ÊıÄâºÏÇøÓò', 'Location', 'best');
-    grid on;
-    ylim([min(n1_all)*0.98, max(n1_all)*1.02]);
-    
-    % ×ÓÍ¼2£ºÕÛÉäÂÊvs²¨Êı£¨È«²¨¶Î£©
-    subplot(1,2,2);
-    plot(wavenumber, n1_all, 'b-', 'LineWidth', 2);
-    hold on;
-    plot(wavenumber(high_k_mask), n1_all(high_k_mask), 'r.', 'MarkerSize', 8);
-    xline(2000, 'k--', 'ÄâºÏ±ß½ç', 'LineWidth', 1.5);
-    xlabel('²¨Êı (cm^{-1})');
-    ylabel('ÕÛÉäÂÊ n');
-    title('ÍâÑÓ²ãÕÛÉäÂÊ£¨²¨ÊıÓò£©');
-    legend('È«²¨¶ÎÕÛÉäÂÊ', '¸ß²¨ÊıÄâºÏÇøÓò', 'Location', 'best');
-    grid on;
-    xlim([min(wavenumber), max(wavenumber)]);
-    
-    sgtitle('Èû¶ûÂõÒ®¶û·½³ÌÄâºÏ½á¹û');
-end
-
-%% ¸Ä½øµÄÄâºÏ½á¹û»æÍ¼
 function plot_fitting_results_improved(wavenumber, reflectance, n1, thickness, n2, incident_angle)
-    
     theta0 = incident_angle * pi / 180;
-    
-    % ¼ÆËãÄâºÏµÄ·´ÉäÂÊ
     R_fitted = model_reflectance_vectorized([thickness, n2], wavenumber, n1, theta0);
+    R_squared_full = 1 - sum((reflectance - R_fitted).^2) / sum((reflectance - mean(reflectance)).^2);
     
-    % ´´½¨×ÛºÏÍ¼ĞÎ
-    figure('Position', [100, 100, 1400, 900]);
-    
-    % ×ÓÍ¼1£ºÈ«²¨¶Î·´ÉäÂÊ¶Ô±È
-    subplot(3,2,[1,2]);
-    plot(wavenumber, reflectance*100, 'b.', 'MarkerSize', 2);
+    figure('Name', 'å…¨å±€æ‹Ÿåˆç»“æœåˆ†æ (é«˜æ³¢æ•°åŒºåŸŸ)', 'Position', [150, 150, 1200, 600]);
+    plot(wavenumber, reflectance*100, 'b.', 'MarkerSize', 5, 'DisplayName', 'å®æµ‹æ•°æ® (å…¨æ³¢æ®µ)');
     hold on;
-    plot(wavenumber, R_fitted*100, 'r-', 'LineWidth', 1.5);
-    xlabel('²¨Êı (cm^{-1})');
-    ylabel('·´ÉäÂÊ (%)');
-    title(sprintf('·´ÉäÂÊÄâºÏ½á¹û (¦È=%d¡ã, d=%.2f ¦Ìm, n?=%.3f)', ...
-        incident_angle, thickness, n2));
-    legend('Êµ²âÊı¾İ', 'ÄâºÏ½á¹û', 'Location', 'best');
-    grid on;
-    xlim([min(wavenumber), max(wavenumber)]);
+    plot(wavenumber, R_fitted*100, 'r-', 'LineWidth', 2, 'DisplayName', 'æ‹Ÿåˆæ¨¡å‹ (å¤–æ¨è‡³å…¨æ³¢æ®µ)');
     
-    % ×ÓÍ¼2£º²Ğ²î·ÖÎö
-    subplot(3,2,3);
-    residuals = (reflectance - R_fitted) * 100;
-    plot(wavenumber, residuals, 'g.', 'MarkerSize', 2);
-    hold on;
-    yline(0, 'k--', 'LineWidth', 1);
-    yline(std(residuals), 'r--', '+¦Ò');
-    yline(-std(residuals), 'r--', '-¦Ò');
-    xlabel('²¨Êı (cm^{-1})');
-    ylabel('²Ğ²î (%)');
-    title(sprintf('²Ğ²î·Ö²¼ (RMSE = %.4f%%)', sqrt(mean(residuals.^2))));
-    grid on;
-    xlim([min(wavenumber), max(wavenumber)]);
+    ylim_vals = ylim;
+    h = fill([1500, max(wavenumber), max(wavenumber), 1500], [ylim_vals(1), ylim_vals(1), ylim_vals(2), ylim_vals(2)], 'k', 'FaceAlpha', 0.08, 'EdgeColor', 'none', 'DisplayName', 'æ‹Ÿåˆä¸å¤„ç†åŒºåŸŸ');
+    uistack(h, 'bottom');
     
-    % ×ÓÍ¼3£º²Ğ²îÖ±·½Í¼
-    subplot(3,2,4);
-    histogram(residuals, 30, 'Normalization', 'probability');
-    xlabel('²Ğ²î (%)');
-    ylabel('¸ÅÂÊ');
-    title('²Ğ²î·Ö²¼Ö±·½Í¼');
-    grid on;
-    
-    % ×ÓÍ¼4£º¸ß²¨ÊıÇøÓòÏ¸½Ú
-    subplot(3,2,5);
-    high_k_mask = wavenumber > 2000;
-    plot(wavenumber(high_k_mask), reflectance(high_k_mask)*100, 'b.', 'MarkerSize', 3);
-    hold on;
-    plot(wavenumber(high_k_mask), R_fitted(high_k_mask)*100, 'r-', 'LineWidth', 1.5);
-    xlabel('²¨Êı (cm^{-1})');
-    ylabel('·´ÉäÂÊ (%)');
-    title('¸ß²¨ÊıÇøÓòÄâºÏÏ¸½Ú (>2000 cm^{-1})');
-    legend('Êµ²âÊı¾İ', 'ÄâºÏ½á¹û', 'Location', 'best');
-    grid on;
-    
-    % ×ÓÍ¼5£ºµÍ²¨ÊıÇøÓòÏ¸½Ú
-    subplot(3,2,6);
-    low_k_mask = wavenumber < 1000;
-    plot(wavenumber(low_k_mask), reflectance(low_k_mask)*100, 'b.', 'MarkerSize', 3);
-    hold on;
-    plot(wavenumber(low_k_mask), R_fitted(low_k_mask)*100, 'r-', 'LineWidth', 1.5);
-    xlabel('²¨Êı (cm^{-1})');
-    ylabel('·´ÉäÂÊ (%)');
-    title('µÍ²¨ÊıÇøÓòÄâºÏÏ¸½Ú (<1000 cm^{-1})');
-    legend('Êµ²âÊı¾İ', 'ÄâºÏ½á¹û', 'Location', 'best');
-    grid on;
-    
-    % ¼ÆËã²¢ÏÔÊ¾ÄâºÏÓÅ¶ÈÖ¸±ê
-    R_squared = 1 - sum((reflectance - R_fitted).^2) / sum((reflectance - mean(reflectance)).^2);
-    MAE = mean(abs(residuals));
-    
-    % Ìí¼Ó×Ü±êÌâ
-    sgtitle(sprintf('Ì¼»¯¹èÍâÑÓ²ãºñ¶È²âÁ¿½á¹û (R? = %.4f, MAE = %.4f%%)', R_squared, MAE));
+    xlabel('æ³¢æ•° (cm^{-1})'); ylabel('åå°„ç‡ (%)');
+    title(sprintf('åå°„ç‡æ‹Ÿåˆç»“æœ (Î¸=%dÂ°, d=%.2f Î¼m, n_2=%.3f, å…¨å±€RÂ²=%.4f)', ...
+        incident_angle, thickness, n2, R_squared_full));
+    legend('Location', 'best'); grid on; xlim([min(wavenumber), max(wavenumber)]);
 end
 
-%% ÏÔÊ¾ÕÛÉäÂÊÍ³¼Æ
-function display_n_statistics(n1_all, wavenumber)
-    fprintf('\nÕÛÉäÂÊÍ³¼ÆĞÅÏ¢:\n');
-    fprintf('  ·¶Î§: [%.4f, %.4f]\n', min(n1_all), max(n1_all));
-    fprintf('  Æ½¾ùÖµ: %.4f\n', mean(n1_all));
-    fprintf('  ±ê×¼²î: %.4f\n', std(n1_all));
-    fprintf('  ÖĞÎ»Êı: %.4f\n', median(n1_all));
-    
-    % ÌØ¶¨²¨ÊıµãµÄÕÛÉäÂÊ
-    specific_k = [500, 1000, 1500, 2000, 2500, 3000, 3500];
-    fprintf('\nÌØ¶¨²¨ÊıµãµÄÕÛÉäÂÊ:\n');
-    for k = specific_k
-        [~, idx] = min(abs(wavenumber - k));
-        if idx <= length(n1_all)
-            fprintf('  %4d cm^-1: n = %.4f (¦Ë = %.2f ¦Ìm)\n', ...
-                k, n1_all(idx), 10000/k);
-        end
-    end
-end
-
-%% ½á¹û¿É¿¿ĞÔ·ÖÎö
 function analyze_reliability(thickness1, thickness2, params1, params2)
-    
-    fprintf('\n=== ½á¹û¿É¿¿ĞÔ·ÖÎö ===\n');
-    
-    % 1. ºñ¶ÈÒ»ÖÂĞÔ¼ìÑé
+    fprintf('\n=== ç»“æœå¯é æ€§åˆ†æ ===\n');
     thickness_diff_percent = abs(thickness1-thickness2)/mean([thickness1,thickness2])*100;
-    if thickness_diff_percent < 5
-        fprintf('? ºñ¶ÈÒ»ÖÂĞÔÁ¼ºÃ (²îÒì < 5%%)\n');
-    else
-        fprintf('? ºñ¶È²îÒì½Ï´ó (%.1f%%)£¬ĞèÒª½øÒ»²½¼ì²é\n', thickness_diff_percent);
-    end
-    
-    % 2. Èû¶ûÂõÒ®¶û²ÎÊıºÏÀíĞÔ
-    fprintf('\nÈû¶ûÂõÒ®¶û²ÎÊı¶Ô±È:\n');
-    param_names = {'B1', 'B2', 'B3', 'C1', 'C2', 'C3'};
-    for i = 1:6
-        diff = abs(params1(i) - params2(i))/mean([params1(i), params2(i)])*100;
-        fprintf('  %s: %.4f vs %.4f (²îÒì: %.1f%%)\n', ...
-            param_names{i}, params1(i), params2(i), diff);
-    end
-    
-    % 3. ÎïÀíºÏÀíĞÔ¼ìÑé
-    fprintf('\nÎïÀíºÏÀíĞÔ¼ìÑé:\n');
-    
-    % ¼ì²éºñ¶È·¶Î§
-    if thickness1 > 1 && thickness1 < 200 && thickness2 > 1 && thickness2 < 200
-        fprintf('? ºñ¶ÈÔÚºÏÀí·¶Î§ÄÚ (1-200 ¦Ìm)\n');
-    else
-        fprintf('? ºñ¶È¿ÉÄÜ³¬³öºÏÀí·¶Î§\n');
-    end
-    
-    % ¼ì²éÕÛÉäÂÊ·¶Î§£¨Ì¼»¯¹èµäĞÍÖµ2.5-2.8£©
-    lambda_test = 2.0;  % ²âÊÔ²¨³¤2¦Ìm
-    n_test1 = calculate_sellmeier_n(lambda_test, params1);
-    n_test2 = calculate_sellmeier_n(lambda_test, params2);
-    
-    if n_test1 > 2.3 && n_test1 < 3.0 && n_test2 > 2.3 && n_test2 < 3.0
-        fprintf('? ÕÛÉäÂÊÔÚºÏÀí·¶Î§ÄÚ (2.3-3.0)\n');
-        fprintf('  ¦Ë=2¦ÌmÊ±: n1=%.3f, n2=%.3f\n', n_test1, n_test2);
-    else
-        fprintf('? ÕÛÉäÂÊ¿ÉÄÜÒì³£\n');
-    end
-    
-    % 4. ½¨Òé
-    fprintf('\n½¨Òé:\n');
-    if thickness_diff_percent < 5
-        fprintf('? ½á¹û¿É¿¿£¬Á½¸ö½Ç¶È²âÁ¿½á¹ûÒ»ÖÂ\n');
-        fprintf('? ÍÆ¼öºñ¶ÈÖµ: %.2f ¡À %.2f ¦Ìm\n', ...
-            mean([thickness1, thickness2]), ...
-            abs(thickness1-thickness2)/2);
-    else
-        fprintf('? ½¨Òé¼ì²éÊµÑéÌõ¼ş»òÖØĞÂ²âÁ¿\n');
-        fprintf('? ¿ÉÄÜĞèÒª¿¼ÂÇ¶à¹âÊø¸ÉÉæĞ§Ó¦\n');
-    end
+    fprintf('åšåº¦ä¸€è‡´æ€§: ä¸¤ä¸ªè§’åº¦æµ‹å¾—çš„åšåº¦åˆ†åˆ«ä¸º %.2f Î¼m å’Œ %.2f Î¼mï¼Œç›¸å¯¹å·®å¼‚ä¸º %.2f%%ã€‚\n', thickness1, thickness2, thickness_diff_percent);
+    if thickness_diff_percent < 5, fprintf('  -> ç»“è®º: ä¸€è‡´æ€§è‰¯å¥½ï¼Œç»“æœå¯é ã€‚\n');
+        fprintf('  -> æ¨èåšåº¦å€¼: %.2f Â± %.2f Î¼m\n', mean([thickness1, thickness2]), abs(thickness1-thickness2)/2);
+    else, fprintf('  -> ç»“è®º: å·®å¼‚è¾ƒå¤§ï¼Œå»ºè®®æ£€æŸ¥æ¨¡å‹æˆ–æ•°æ®ã€‚\n'); end
+    fprintf('\nå¡å°”è¿ˆè€¶å°”å‚æ•°ç¨³å®šæ€§:\n');
+    param_names = {'B1', 'B2', 'B3', 'C1', 'C2', 'C3'}; is_stable = true;
+    for i = 1:6, diff = abs(params1(i) - params2(i))/mean([params1(i), params2(i)])*100;
+        if diff > 50, is_stable = false; end
+        fprintf('  %s: %.4f vs %.4f (å·®å¼‚: %.1f%%)\n', param_names{i}, params1(i), params2(i), diff); end
+    if is_stable, fprintf('  -> ç»“è®º: å‚æ•°åœ¨ä¸åŒè§’åº¦ä¸‹æ‹Ÿåˆç»“æœåŸºæœ¬ç¨³å®šã€‚\n');
+    else, fprintf('  -> ç»“è®º: éƒ¨åˆ†å‚æ•°åœ¨ä¸åŒè§’åº¦ä¸‹æ‹Ÿåˆç»“æœå·®å¼‚è¾ƒå¤§ï¼Œä½†åªè¦æœ€ç»ˆçš„n(Î»)æ›²çº¿å’Œåšåº¦dä¸€è‡´å³å¯ã€‚\n'); end
 end
