@@ -67,7 +67,7 @@ selParam = x_optimal(3:8);
 
 fprintf('  - 最终厚度: %.2f μm\n', thk);
 fprintf('  - 最终衬底折射率 n2: %.3f\n', n2);
-fprintf('  - 在拟合区域的拟合优度 R²: %.4f\n', config.waveN_fit_min, R_squared_fit);
+fprintf('  - 在拟合区域的拟合优度 R²: %.4f\n', R_squared_fit);
 
 n1_all = calculate_sellmeier_n(waveLen_full, selParam);
 plot_fitting_results(waveNum, R, n1_all, thk, n2, incident_angle, config.waveN_fit_min);
@@ -169,7 +169,7 @@ function analyze_results(res1, res2, angle1, angle2)
     if is_stable
         fprintf('  -> 结论: 参数在不同角度下拟合结果基本稳定。\n');
     else
-        fprintf('  -> 结论: 部分参数差异较大，但只要最终的 n(λ) 曲线和厚度 d 一致。\n'); 
+        fprintf('  -> 结论: 部分参数差异较大，但最终的 n(λ) 曲线和厚度 d 一致。\n'); 
     end
 end
 
