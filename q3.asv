@@ -2,9 +2,9 @@ clc;
 clear;
 close all;
 
-file1.path = '¸½¼ş3.xlsx';
+file1.path = 'é™„ä»¶3.xlsx';
 file1.angle = 10;
-file2.path = '¸½¼ş4.xlsx';
+file2.path = 'é™„ä»¶4.xlsx';
 file2.angle = 15;
 
 config.waveN_fit_min = 400;
@@ -16,19 +16,19 @@ config.k1Param_B_init = 2.0;
 config.drudeParam_init = [2000, 200];
 config.epsilon_inf = 11.7;
 
-disp('¼ÆËãºñ¶È³õÖµ');
+disp('è®¡ç®—åšåº¦åˆå€¼');
 data1 = readmatrix(file1.path);
 thk_init1 = fft_thk_estimate(data1(:,1), data1(:,2)/100, config.n1_init, 2000, file1.angle);
 data2 = readmatrix(file2.path);
 thk_init2 = fft_thk_estimate(data2(:,1), data2(:,2)/100, config.n1_init, 2000, file2.angle);
 config.thk_init = mean([thk_init1, thk_init2]);
-fprintf('ÎÄ¼ş3 (10¡ã) FFT¹ÀËãºñ¶È: %.2f ¦Ìm\n', thk_init1);
-fprintf('ÎÄ¼ş4 (15¡ã) FFT¹ÀËãºñ¶È: %.2f ¦Ìm\n', thk_init2);
-fprintf('Æ½¾ùºñ¶È³õÖµ: %.2f ¦Ìm\n', config.thk_init);
+fprintf('æ–‡ä»¶3 (10Â°) FFTä¼°ç®—åšåº¦: %.2f Î¼m\n', thk_init1);
+fprintf('æ–‡ä»¶4 (15Â°) FFTä¼°ç®—åšåº¦: %.2f Î¼m\n', thk_init2);
+fprintf('å¹³å‡åšåº¦åˆå€¼: %.2f Î¼m\n', config.thk_init);
 
-disp('--- ¿ªÊ¼´¦Àí¸½¼ş3 (10¡ã) ---')
+disp('--- å¼€å§‹å¤„ç†é™„ä»¶3 (10Â°) ---')
 [result1] = process(data1, file1.angle, config, file1.path);
-disp('--- ¿ªÊ¼´¦Àí¸½¼ş4 (15¡ã) ---')
+disp('--- å¼€å§‹å¤„ç†é™„ä»¶4 (15Â°) ---')
 [result2] = process(data2, file2.angle, config, file2.path);
 
 analyze_res(result1, result2, file1.angle, file2.angle);
@@ -43,62 +43,62 @@ function [result] = process(data, angle, config, output_filepath)
     R_fit = R(filter);
     waveLen_fit = waveLen_full(filter);
     
-    disp('--- Phase 1: ¿ÂÎ÷Ä£ĞÍ´ÖÄâºÏ');
-    % ¿ÂÎ÷Ä£ĞÍ²ÎÊıË³Ğò£º[thk, cauchyParam(2), k1Param(2), drudeParam(2)]
+    disp('--- Phase 1: æŸ¯è¥¿æ¨¡å‹ç²—æ‹Ÿåˆ');
+    % æŸ¯è¥¿æ¨¡å‹å‚æ•°é¡ºåºï¼š[thk, cauchyParam(2), k1Param(2), drudeParam(2)]
     x0_cauchy = [config.thk_init, config.cauchyParam_init, config.k1Param_A_init, config.k1Param_B_init, config.drudeParam_init];
     lb_cauchy = [config.thk_init*0.8, 3.35, 0, 0, 0, 100, 10];
     ub_cauchy = [config.thk_init*1.2, 3.6, 0.2, 1e-3, 4, 4000, 1000];
     
     [x_optimal_cauchy, R_squared_cauchy] = global_fit(x0_cauchy, lb_cauchy, ub_cauchy, waveNum_fit, R_fit, waveLen_fit, angle, config.epsilon_inf, 'cauchy');
     
-    fprintf('   Phase 1 Íê³É. R? = %.4f\n', R_squared_cauchy);
-    fprintf('   ¿ÂÎ÷ÄâºÏºñ¶È: %.2f ¦Ìm\n', x_optimal_cauchy(1));
-    fprintf('   ¿ÂÎ÷²ÎÊı: A=%.3f, B=%.3f\n', x_optimal_cauchy(2), x_optimal_cauchy(3));
-    fprintf('   k1²ÎÊı: A=%.2e, B=%.2f\n', x_optimal_cauchy(4), x_optimal_cauchy(5));
-    fprintf('   Drude²ÎÊı: ¦Í_p=%.1f, ¦£=%.1f\n', x_optimal_cauchy(6), x_optimal_cauchy(7));
+    fprintf('   Phase 1 å®Œæˆ. R? = %.4f\n', R_squared_cauchy);
+    fprintf('   æŸ¯è¥¿æ‹Ÿåˆåšåº¦: %.2f Î¼m\n', x_optimal_cauchy(1));
+    fprintf('   æŸ¯è¥¿å‚æ•°: A=%.3f, B=%.3f\n', x_optimal_cauchy(2), x_optimal_cauchy(3));
+    fprintf('   k1å‚æ•°: A=%.2e, B=%.2f\n', x_optimal_cauchy(4), x_optimal_cauchy(5));
+    fprintf('   Drudeå‚æ•°: Î½_p=%.1f, Î“=%.1f\n', x_optimal_cauchy(6), x_optimal_cauchy(7));
     
-    disp('--- Phase 2: SellmeierÄ£ĞÍ¾«ĞŞ');
+    disp('--- Phase 2: Sellmeieræ¨¡å‹ç²¾ä¿®');
     
-    % »ùÓÚ¿ÂÎ÷ÄâºÏ½á¹ûÖÇÄÜÉèÖÃSellmeier³õÊ¼Öµ
-    % Ê¹ÓÃ¿ÂÎ÷ÄâºÏµÃµ½µÄºñ¶È¡¢k1²ÎÊıºÍDrude²ÎÊı×÷Îª»ù´¡
+    % åŸºäºæŸ¯è¥¿æ‹Ÿåˆç»“æœæ™ºèƒ½è®¾ç½®Sellmeieråˆå§‹å€¼
+    % ä½¿ç”¨æŸ¯è¥¿æ‹Ÿåˆå¾—åˆ°çš„åšåº¦ã€k1å‚æ•°å’ŒDrudeå‚æ•°ä½œä¸ºåŸºç¡€
     thk_cauchy = x_optimal_cauchy(1);
     k1_cauchy = x_optimal_cauchy(4:5);
     drude_cauchy = x_optimal_cauchy(6:7);
     
-    % Sellmeier²ÎÊı³õÖµ¿ÉÒÔ»ùÓÚ¿ÂÎ÷Ä£ĞÍµÄÕÛÉäÂÊ·¶Î§À´µ÷Õû
-    % µ«±£³ÖÔ­Ê¼µÄSellmeier²ÎÊı×÷Îª³õÊ¼²Â²â£¬ÒòÎªËüÃÇµÄÎïÀíÒâÒå²»Í¬
+    % Sellmeierå‚æ•°åˆå€¼å¯ä»¥åŸºäºæŸ¯è¥¿æ¨¡å‹çš„æŠ˜å°„ç‡èŒƒå›´æ¥è°ƒæ•´
+    % ä½†ä¿æŒåŸå§‹çš„Sellmeierå‚æ•°ä½œä¸ºåˆå§‹çŒœæµ‹ï¼Œå› ä¸ºå®ƒä»¬çš„ç‰©ç†æ„ä¹‰ä¸åŒ
     x0_sel = [thk_cauchy, config.selParam_init, k1_cauchy, drude_cauchy];
     
-    % »ùÓÚ¿ÂÎ÷ÄâºÏ½á¹ûÉèÖÃ¸ü½ôµÄ±ß½ç
-    % ºñ¶È·¶Î§£º¿ÂÎ÷½á¹ûµÄ¡À3%
-    thk_range_factor = 0.2;
+    % åŸºäºæŸ¯è¥¿æ‹Ÿåˆç»“æœè®¾ç½®æ›´ç´§çš„è¾¹ç•Œ
+    % åšåº¦èŒƒå›´ï¼šæŸ¯è¥¿ç»“æœçš„Â±3%
+    thk_range_factor = 0.1;
     lb_thk = thk_cauchy * (1 - thk_range_factor);
     ub_thk = thk_cauchy * (1 + thk_range_factor);
     
-    % Sellmeier²ÎÊı·¶Î§£º³õÊ¼ÖµµÄ¡À20%£¨ÒòÎªÊÇ²»Í¬µÄÉ«É¢Ä£ĞÍ£¬¸øÓèÒ»¶¨×ÔÓÉ¶È£©
+    % Sellmeierå‚æ•°èŒƒå›´ï¼šåˆå§‹å€¼çš„Â±20%ï¼ˆå› ä¸ºæ˜¯ä¸åŒçš„è‰²æ•£æ¨¡å‹ï¼Œç»™äºˆä¸€å®šè‡ªç”±åº¦ï¼‰
     sel_range_factor = 0.4;
     lb_sel_params = config.selParam_init * (1 - sel_range_factor);
     ub_sel_params = config.selParam_init * (1 + sel_range_factor);
     
-    % k1²ÎÊı·¶Î§£º¿ÂÎ÷½á¹ûµÄ¡À30%
-    k1_range_factor = 0.2;
+    % k1å‚æ•°èŒƒå›´ï¼šæŸ¯è¥¿ç»“æœçš„Â±30%
+    k1_range_factor = 0.1;
     lb_k1 = k1_cauchy * (1 - k1_range_factor);
     ub_k1 = k1_cauchy * (1 + k1_range_factor);
     
-    % Drude²ÎÊı·¶Î§£º¿ÂÎ÷½á¹ûµÄ¡À10%
-    drude_range_factor = 0.2;
+    % Drudeå‚æ•°èŒƒå›´ï¼šæŸ¯è¥¿ç»“æœçš„Â±10%
+    drude_range_factor = 0.3;
     lb_drude = drude_cauchy * (1 - drude_range_factor);
     ub_drude = drude_cauchy * (1 + drude_range_factor);
     
-    % ×éºÏËùÓĞÏÂÏŞ
+    % ç»„åˆæ‰€æœ‰ä¸‹é™
     lb_sel = [lb_thk, lb_sel_params, lb_k1, lb_drude];
     ub_sel = [ub_thk, ub_sel_params, ub_k1, ub_drude];
     
-    % È·±£±ß½çÔÚºÏÀíµÄÎïÀí·¶Î§ÄÚ
+    % ç¡®ä¿è¾¹ç•Œåœ¨åˆç†çš„ç‰©ç†èŒƒå›´å†…
     lb_sel = max(lb_sel, [config.thk_init*0.7, 0.1, 0.001, 0.0001, 0.0001, 0.1, 1, 0, 0, 50, 5]);
     ub_sel = min(ub_sel, [config.thk_init*1.3, 20, 5, 10, 2, 15, 2000, 1e-3, 4, 5000, 1500]);
     
-    % ·ÀÖ¹k1²ÎÊıÎª¸º
+    % é˜²æ­¢k1å‚æ•°ä¸ºè´Ÿ
     if lb_sel(8) < 0
         lb_sel(8) = 0;
     end
@@ -106,16 +106,16 @@ function [result] = process(data, angle, config, output_filepath)
         lb_sel(9) = 0;
     end
     
-    fprintf('   SellmeierÄâºÏ²ÎÊı·¶Î§:\n');
-    fprintf('   ºñ¶È: [%.2f, %.2f] ¦Ìm\n', lb_sel(1), ub_sel(1));
+    fprintf('   Sellmeieræ‹Ÿåˆå‚æ•°èŒƒå›´:\n');
+    fprintf('   åšåº¦: [%.2f, %.2f] Î¼m\n', lb_sel(1), ub_sel(1));
     fprintf('   k1_A: [%.2e, %.2e]\n', lb_sel(8), ub_sel(8));
     fprintf('   k1_B: [%.2f, %.2f]\n', lb_sel(9), ub_sel(9));
-    fprintf('   ¦Í_p: [%.1f, %.1f] cm??\n', lb_sel(10), ub_sel(10));
-    fprintf('   ¦£: [%.1f, %.1f] cm??\n', lb_sel(11), ub_sel(11));
+    fprintf('   Î½_p: [%.1f, %.1f] cm??\n', lb_sel(10), ub_sel(10));
+    fprintf('   Î“: [%.1f, %.1f] cm??\n', lb_sel(11), ub_sel(11));
     
     [x_optimal_sel, R_squared_sel] = global_fit(x0_sel, lb_sel, ub_sel, waveNum_fit, R_fit, waveLen_fit, angle, config.epsilon_inf, 'sellmeier');
 
-    % ±£´æ½á¹û
+    % ä¿å­˜ç»“æœ
     result.thk = x_optimal_sel(1);
     result.selParam = x_optimal_sel(2:7);
     result.k1Param = x_optimal_sel(8:9);
@@ -123,31 +123,31 @@ function [result] = process(data, angle, config, output_filepath)
     result.n1_complex_full = calculate_n1_complex_sellmeier(waveLen_full, result.selParam, result.k1Param);
     result.n2_complex_full = calculate_n2_complex_drude(waveNum, result.drudeParam, config.epsilon_inf);
 
-    fprintf('   Phase 2 Íê³É. ×îÖÕ R? = %.4f\n', R_squared_sel);
-    fprintf('   ×îÖÕºñ¶È: %.2f ¦Ìm (Ïà¶Ô¿ÂÎ÷±ä»¯: %.2f%%)\n', result.thk, (result.thk - thk_cauchy)/thk_cauchy*100);
-    fprintf('   ×îÖÕÍâÑÓ²ã n1 (ÔÚ 6¦Ìm): %.3f + %.4fi\n', real(interp1(waveLen_full, result.n1_complex_full, 6)), imag(interp1(waveLen_full, result.n1_complex_full, 6)));
-    fprintf('   ×îÖÕ³Äµ× Drude ²ÎÊı ¦Í_p: %.1f cm??, ¦£: %.1f cm??\n', result.drudeParam(1), result.drudeParam(2));
-    fprintf('   R?ÌáÉı: %.4f -> %.4f (¦¤=%.4f)\n', R_squared_cauchy, R_squared_sel, R_squared_sel - R_squared_cauchy);
+    fprintf('   Phase 2 å®Œæˆ. æœ€ç»ˆ R? = %.4f\n', R_squared_sel);
+    fprintf('   æœ€ç»ˆåšåº¦: %.2f Î¼m (ç›¸å¯¹æŸ¯è¥¿å˜åŒ–: %.2f%%)\n', result.thk, (result.thk - thk_cauchy)/thk_cauchy*100);
+    fprintf('   æœ€ç»ˆå¤–å»¶å±‚ n1 (åœ¨ 6Î¼m): %.3f + %.4fi\n', real(interp1(waveLen_full, result.n1_complex_full, 6)), imag(interp1(waveLen_full, result.n1_complex_full, 6)));
+    fprintf('   æœ€ç»ˆè¡¬åº• Drude å‚æ•° Î½_p: %.1f cm??, Î“: %.1f cm??\n', result.drudeParam(1), result.drudeParam(2));
+    fprintf('   R?æå‡: %.4f -> %.4f (Î”=%.4f)\n', R_squared_cauchy, R_squared_sel, R_squared_sel - R_squared_cauchy);
 
-    % ±£´æ½á¹ûµ½Excel
+    % ä¿å­˜ç»“æœåˆ°Excel
     try
         theta0_rad = angle * pi / 180;
         R_fit_full = compute_R(result.thk, result.n1_complex_full, result.n2_complex_full, waveNum, theta0_rad, 1);
         R_fit_per = R_fit_full * 100;
         writematrix(R_fit_per, output_filepath, 'Sheet', 1, 'Range', 'C2');
-        fprintf('   ³É¹¦½«ÄâºÏ½á¹û±£´æµ½: %s\n', output_filepath);
+        fprintf('   æˆåŠŸå°†æ‹Ÿåˆç»“æœä¿å­˜åˆ°: %s\n', output_filepath);
     catch ME
-        fprintf('   ±£´æExcelÎÄ¼şÊ±³ö´í: %s\n', ME.message);
+        fprintf('   ä¿å­˜Excelæ–‡ä»¶æ—¶å‡ºé”™: %s\n', ME.message);
     end
     
-    % »æÍ¼
+    % ç»˜å›¾
     R_fit_plot = compute_R(result.thk, result.n1_complex_full, result.n2_complex_full, waveNum, angle * pi / 180, 1);
     plot_fit_res(waveNum, R, R_fit_plot, angle, config.waveN_fit_min);
-    plot_optical_constants(waveLen_full, waveNum, result.n1_complex_full, 'ÍâÑÓ²ã (Sellmeier)');
-    plot_optical_constants(waveLen_full, waveNum, result.n2_complex_full, '³Äµ× (Drude)');
+    plot_optical_constants(waveLen_full, waveNum, result.n1_complex_full, 'å¤–å»¶å±‚ (Sellmeier)');
+    plot_optical_constants(waveLen_full, waveNum, result.n2_complex_full, 'è¡¬åº• (Drude)');
 end
 
-% ¸¨Öúº¯Êı£º¼ÆËãSellmeierÄ£ĞÍµÄ¸´ÕÛÉäÂÊ
+% è¾…åŠ©å‡½æ•°ï¼šè®¡ç®—Sellmeieræ¨¡å‹çš„å¤æŠ˜å°„ç‡
 function n1_complex = calculate_n1_complex_sellmeier(waveLen, selParam, k1Param)
     B1=selParam(1); B2=selParam(2); B3=selParam(3);
     C1=selParam(4); C2=selParam(5); C3=selParam(6);
@@ -164,7 +164,7 @@ function n1_complex = calculate_n1_complex_sellmeier(waveLen, selParam, k1Param)
     n1_complex = n_real + 1i * k_imag;
 end
 
-% ¸¨Öúº¯Êı£º¼ÆËãDrudeÄ£ĞÍµÄ¸´ÕÛÉäÂÊ
+% è¾…åŠ©å‡½æ•°ï¼šè®¡ç®—Drudeæ¨¡å‹çš„å¤æŠ˜å°„ç‡
 function n2_complex = calculate_n2_complex_drude(waveNum, drudeParam, epsilon_inf)
     nu_p = drudeParam(1);
     Gamma = drudeParam(2);
