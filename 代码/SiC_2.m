@@ -9,13 +9,16 @@ file2.path = '附件2.xlsx';
 file2.angle = 15; % 入射角 (度)
 
 % --- 拟合全局配置
-config.waveN_fit_min = 1200; % 拟合起始波数 (cm??)
+config.waveN_fit_min = 1500; % 拟合起始波数 (cm??)
 config.n1_init = 2.58;       % 外延层折射率初值 (用于FFT估算厚度)
 config.n2_real_init = 2.55;  % 衬底折射率初值
 config.k1_A_init = 0.001;    % 外延层消光系数参数A初值
 config.k1_B_init = 2.0;      % 外延层消光系数参数B初值
+
 % Sellmeier模型 B1, B2, B3, C1, C2, C3 参数初值
 config.selParam_init = [5.5, 0.2, 0.05, 0.027, 100, 0.01]; 
+
+
 
 % --- 步骤 1: 使用FFT估算厚度初值
 disp('=====================================================');
@@ -54,6 +57,7 @@ disp('=====================================================');
 
 %% 数据处理和拟合主函数
 function [result] = process(data, angle, config, output_filepath)
+epsilon= 11.7;
     waveNum = data(:, 1);       % 波数 (cm??)
     R = data(:, 2) / 100;       % 反射率 (0-1)
     waveLen_full = 10000 ./ waveNum; % 波长 (μm)
@@ -61,21 +65,23 @@ function [result] = process(data, angle, config, output_filepath)
     % 根据设定的波数范围筛选用于拟合的数据
     filter = waveNum >= config.waveN_fit_min;
     waveNum_fit = waveNum(filter);
+    waveLen_fit = 10000 ./ waveNum_fit; 
+
     R_fit = R(filter);
     
     % 参数顺序: [厚度, 衬底n2, Sellmeier(6个), k参数(2个)]
     x0 = [config.thk_init, config.n2_real_init, config.selParam_init, config.k1_A_init, config.k1_B_init];
-    lb = [config.thk_init*0.8, 2.0, 0.1, 0.001, 0.0001, 0.0001, 0.1, 0.001, 0, 0];
+    lb = [config.thk_init*0.8, 2.0, 0.01, 0.001, 0.0001, 0.0001, 0.1, 0.001, 0, 0];
     ub = [config.thk_init*1.2, 3.5, 20, 10, 5, 2, 150, 20, 0.01, 4];
 
     model_type = 'real_substrate'; 
-    [x_optimal, R_squared_fit] = global_fit(x0, lb, ub, waveNum_fit, R_fit, angle, model_type);
+    [x_optimal, R_squared_fit] = global_fit(x0, lb, ub,  R_fit,waveLen_fit, angle, epsilon ,model_type);
 
     result.thk = x_optimal(1);
     result.n2 = x_optimal(2);
     result.selParam = x_optimal(3:8);
     result.k1Param = x_optimal(9:10);
-    result.n1_complex_full = cal_n_sellmeier(waveLen_full, result.selParam, result.k1Param); % <--- 已修正函数名
+    result.n1_complex_full = cal_n_sellmeier(waveLen_full, result.selParam, result.k1Param);
 
     fprintf('    最终厚度: %.2f μm\n', result.thk);
     fprintf('    最终外延层 n1 (在 6μm): %.3f + %.4fi\n', real(interp1(waveLen_full, result.n1_complex_full, 6)), imag(interp1(waveLen_full, result.n1_complex_full, 6)));
@@ -83,7 +89,7 @@ function [result] = process(data, angle, config, output_filepath)
     fprintf('    在拟合区域的拟合优度 R?: %.4f\n', R_squared_fit);
 
     theta0_rad = angle * pi / 180;
-    R_fit_full = compute_R(result.thk, result.n1_complex_full, result.n2, waveNum, theta0_rad, 1);
+    R_fit_full = compute_R(result.thk, result.n1_complex_full, result.n2, waveNum, theta0_rad,0);
     
     try
         R_fit_per = R_fit_full * 100;
@@ -100,3 +106,48 @@ function [result] = process(data, angle, config, output_filepath)
 end
 
 
+function analyze_res(result1, result2, angle1, angle2)
+% ANALYZE_RES 分析和比较两个角度的拟合结果
+%
+% 输入:
+%   result1 - 第一个角度的拟合结果结构体
+%   result2 - 第二个角度的拟合结果结构体
+%   angle1  - 第一个角度的值 (度)
+%   angle2  - 第二个角度的值 (度)
+
+% --- 1. 文本分析：在命令窗口中比较关键参数 ---
+
+fprintf('<strong>--- 关键物理参数对比 ---</strong>\n');
+
+% 比较外延层厚度 (thk)
+thk1 = result1.thk;
+thk2 = result2.thk;
+thk_diff_abs = abs(thk1 - thk2);
+thk_diff_rel = thk_diff_abs / mean([thk1, thk2]) * 100;
+fprintf('外延层厚度:\n');
+fprintf('  %d° 拟合结果: %.3f μm\n', angle1, thk1);
+fprintf('  %d° 拟合结果: %.3f μm\n', angle2, thk2);
+fprintf('  -> 绝对差异: %.3f μm\n', thk_diff_abs);
+fprintf('  -> 相对差异: %.2f %%\n', thk_diff_rel);
+if thk_diff_rel < 1.0
+    fprintf('  结论: 厚度结果具有高度一致性。\n\n');
+else
+    fprintf('  结论: 厚度结果存在一定差异，请检查。\n\n');
+end
+
+% 比较衬底折射率 (n2)
+n2_1 = result1.n2;
+n2_2 = result2.n2;
+n2_diff_abs = abs(n2_1 - n2_2);
+n2_diff_rel = n2_diff_abs / mean([n2_1, n2_2]) * 100;
+fprintf('衬底折射率 (n2):\n');
+fprintf('  %d° 拟合结果: %.3f\n', angle1, n2_1);
+fprintf('  %d° 拟合结果: %.3f\n', angle2, n2_2);
+fprintf('  -> 绝对差异: %.3f\n', n2_diff_abs);
+fprintf('  -> 相对差异: %.2f %%\n', n2_diff_rel);
+if n2_diff_rel < 2.0
+    fprintf('  结论: 衬底折射率结果一致性良好。\n\n');
+else
+    fprintf('  结论: 衬底折射率结果存在一定差异，请检查。\n\n');
+end
+end

@@ -1,4 +1,6 @@
-function [x_optimal, R_squared] = global_fit(x0, lb, ub, waveNum_fit, R_fit, waveLen_fit, angle, epsilon_inf, model_type)
+function [x_optimal, R_squared] = global_fit(x0, lb, ub, R_fit, waveLen_fit, angle, epsilon_inf, model_type)
+    waveNum_fit = 10000 ./ waveLen_fit; 
+    
     theta0_rad = angle * pi / 180;
     if strcmp(model_type, 'cauchy')
         model_func = @(x, k) model_R_cauchy(x, k, waveLen_fit, theta0_rad, epsilon_inf);
@@ -49,35 +51,3 @@ function R = model_R_cauchy(params, ~, waveLen, theta0, epsilon_inf)
 end
 
 
-
-function n1_complex = cal_n_cauchy(waveLen, cauchyParam, k1Param)
-    A = cauchyParam(1); B = cauchyParam(2);
-    n_real = A + B ./ (waveLen.^2);
-    k1_A = k1Param(1); k1_B = k1Param(2);
-    k_imag = k1_A * waveLen.^k1_B;
-    n1_complex = n_real + 1i * k_imag;
-end
-
-function n1_complex = cal_n_sellmeier(waveLen, selParam, k1Param)
-    B1=selParam(1); B2=selParam(2); B3=selParam(3);
-    C1=selParam(4); C2=selParam(5); C3=selParam(6);
-    lambda_sq = waveLen.^2;
-    eps = 1e-10;
-    term1 = B1*lambda_sq./(lambda_sq-C1+eps);
-    term2 = B2*lambda_sq./(lambda_sq-C2+eps);
-    term3 = B3*lambda_sq./(lambda_sq-C3+eps);
-    n_squared = 1 + term1 + term2 + term3;
-    n_squared(n_squared < 1) = 1;
-    n_real = real(sqrt(n_squared));
-    k1_A = k1Param(1); k1_B = k1Param(2);
-    k_imag = k1_A * waveLen.^k1_B;
-    n1_complex = n_real + 1i * k_imag;
-end
-
-function n2_complex = cal_n_drude(waveNum, drudeParam, epsilon_inf)
-    nu_p = drudeParam(1);
-    Gamma = drudeParam(2);
-    nu = waveNum(:);
-    epsilon_complex = epsilon_inf - (nu_p^2) ./ (nu.^2 + 1i * Gamma * nu);
-    n2_complex = sqrt(epsilon_complex);
-end
