@@ -3,7 +3,7 @@ function plot_optical_constants(waveLen, waveNum, n_complex, layer_name)
 %   waveLen: 波长 (μm)
 %   waveNum: 波数 (cm^-1)
 %   n_complex: 复折射率 (n+ik)
-%   layer_name: 图例中显示的层名称 (e.g., '外延层')
+%   layer_name: 图例中显示的层名称
 
     figure('Name', ['拟合得到的 ' layer_name ' 复折射率色散曲线'], 'Position', [100, 100, 1200, 450]);
     

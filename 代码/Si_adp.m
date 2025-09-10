@@ -163,7 +163,7 @@ function [res] = process(data, angle, config, output_filepath)
     % 保存结果到Excel
     try
         theta0_rad = angle * pi / 180;
-        R_fit_full = compute_R(res.thk, res.n1_complex, res.n2_complex_full, waveNum, theta0_rad, 0);
+        R_fit_full = compute_R(res.thk, res.n1_complex, res.n2_complex_full, waveNum, theta0_rad, 2);
         R_fit_per = R_fit_full * 100;
         writematrix(R_fit_per, output_filepath, 'Sheet', 1, 'Range', 'C2');
         fprintf('   成功将拟合结果保存到: %s (使用%s模型)\n', output_filepath, res.selected_model);
@@ -175,7 +175,7 @@ function [res] = process(data, angle, config, output_filepath)
 
     % 柯西
     subplot(1,2,1);
-    R_fit_cauchy = compute_R(cauchy_res.thk, cauchy_res.n1_complex, cauchy_res.n2_complex_full, waveNum, angle * pi / 180, 0);
+    R_fit_cauchy = compute_R(cauchy_res.thk, cauchy_res.n1_complex, cauchy_res.n2_complex_full, waveNum, angle * pi / 180, 2);
     plot(waveNum(2:end), R(2:end)*100, '-', 'Color', '#d74f44', 'LineWidth', 1.5, 'DisplayName', '实验数据');
     hold on;
     plot(waveNum, R_fit_cauchy*100, '-', 'Color', '#008ede', 'LineWidth', 1.3, 'DisplayName', sprintf('柯西模型 (R^2=%.4f)', cauchy_res.R_squared));
@@ -186,7 +186,7 @@ function [res] = process(data, angle, config, output_filepath)
     
     % sel
     subplot(1,2,2);
-    R_fit_sel = compute_R(sel_res.thk, sel_res.n1_complex, sel_res.n2_complex_full, waveNum, angle * pi / 180, 0);
+    R_fit_sel = compute_R(sel_res.thk, sel_res.n1_complex, sel_res.n2_complex_full, waveNum, angle * pi / 180, 2);
     plot(waveNum(2:end), R(2:end)*100, '-', 'Color', '#d74f44', 'LineWidth', 1.5, 'DisplayName', '实验数据');
     hold on;
     plot(waveNum, R_fit_sel*100, '-', 'Color', '#3f8819', 'LineWidth', 1.3, 'DisplayName', sprintf('sel模型 (R^2=%.4f)', sel_res.R_squared));

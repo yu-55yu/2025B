@@ -1,4 +1,4 @@
-function R = calculate_R_multi_beam(r01_s, r12_s, r01_p, r12_p, exp_term)
+function R = cal_R_mul(r01_s, r12_s, r01_p, r12_p, exp_term)
 % CALCULATE_R_MULTI_BEAM 多光束干涉模型
     r_s_total = (r01_s + r12_s .* exp_term) ./ (1 + r01_s .* r12_s .* exp_term);
     r_p_total = (r01_p + r12_p .* exp_term) ./ (1 + r01_p .* r12_p .* exp_term);

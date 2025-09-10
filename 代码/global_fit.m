@@ -37,8 +37,6 @@ function R = model_R_real_substrate(params, ~, waveLen, theta0)
     R = compute_R(thk, n1_complex, n2, waveNum_model, theta0, 1);
 end
 
-
-
 function R = model_R_cauchy(params, ~, waveLen, theta0, epsilon_inf)
     thk = params(1);
     cauchyParam = params(2:3);
